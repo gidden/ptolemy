@@ -85,6 +85,15 @@ def transform_from_latlon(lat, lon):
 
 
 class IndexRaster(object):
+    """Example use case
+
+    ```
+    rs = IndexRaster(like='data.nc')
+    rs.read_shapefile('boundaries.shp', idxkey='ISO3')
+    da = rs.rasterize(strategy='all_touched')
+    da.to_netcdf('index_raster.nc')
+    ```
+    """
 
     def __init__(self, shape=None, coords=None, like=None):
         # mask could be an xarray dataset
