@@ -1,3 +1,7 @@
+import xarray as xr
+import rasterio as rio
+
+from affine import Affine
 
 
 def rasterize_majority(geoms_idxs, atrans, shape, nodata, ignore_nodata=False, verbose=False):
@@ -68,14 +72,32 @@ def rasterize_pctcover(geom, atrans, shape):
     return rv_array.astype('float32') / (scale ** 2)
 
 
+def transform_from_latlon(lat, lon):
+    lat = np.asarray(lat)
+    lon = np.asarray(lon)
+    trans = Affine.translation(lon[0], lat[0])
+    scale = Affine.scale(lon[1] - lon[0], lat[1] - lat[0])
+    return trans * scale
+
+
 class IndexRaster(object):
 
-    def __init__(self):
+    def __init__(self, shpf, shape=None, transform=None, like=None):
         # mask could be an xarray dataset
         # profile and tags could be attributes
         self.profile = None
         self.mask = None
         self.tags = None
+
+        if like is not None:
+            with xr.open_dataarray(like) as da:
+                lat = da.coords['lat']
+                lon = da.coords['lon']
+                self.transform = transform_from_latlon(lat, lon)
+                self.shape = da.shape
+        else:
+            self.transform = transform
+            self.shape = shape
 
     def rasterize(self, strategy=None, normalize_weights=True,
                   flatten=False, idxkey=None, like=None, profile=None,
