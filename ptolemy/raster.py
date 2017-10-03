@@ -1,7 +1,11 @@
+import fiona as fio
+import numpy as np
 import xarray as xr
-import rasterio as rio
 
 from affine import Affine
+from collections import OrderedDict
+
+from rasterio.features import rasterize as _rasterize
 
 
 def rasterize_majority(geoms_idxs, atrans, shape, nodata, ignore_nodata=False, verbose=False):
@@ -22,7 +26,7 @@ def rasterize_majority(geoms_idxs, atrans, shape, nodata, ignore_nodata=False, v
     if verbose:
         print('Beginning rasterization')
 
-    a = rio.features.rasterize(
+    a = _rasterize(
         geoms_idxs,
         out_shape=new_shape,
         transform=new_affine,
@@ -60,7 +64,7 @@ def rasterize_pctcover(geom, atrans, shape):
     scale = 10
     new_affine, new_shape = rescale_raster_props(atrans, shape, scale)
 
-    rasterized = rio.features.rasterize(
+    rasterized = _rasterize(
         [(geom, 1)],
         out_shape=new_shape,
         transform=new_affine,
@@ -82,26 +86,41 @@ def transform_from_latlon(lat, lon):
 
 class IndexRaster(object):
 
-    def __init__(self, shpf, shape=None, transform=None, like=None):
+    def __init__(self, shape=None, coords=None, like=None):
         # mask could be an xarray dataset
         # profile and tags could be attributes
-        self.profile = None
         self.mask = None
         self.tags = None
+        self.geoms_idxs = None
+
+        self.nodata = -1
+        self.dtype = np.int32
 
         if like is not None:
             with xr.open_dataarray(like) as da:
-                lat = da.coords['lat']
-                lon = da.coords['lon']
-                self.transform = transform_from_latlon(lat, lon)
                 self.shape = da.shape
+                self.coords = {
+                    'lat': da.coords['lat'],
+                    'lon': da.coords['lon'],
+                }
         else:
-            self.transform = transform
             self.shape = shape
+            self.coords = coords
 
-    def rasterize(self, strategy=None, normalize_weights=True,
-                  flatten=False, idxkey=None, like=None, profile=None,
-                  verbose=False):
+    def read_shpf(self, shpf, idxkey=None, flatten=None):
+        with fio.open(shpf, 'r') as n:
+            geoms_idxs = tuple((c['geometry'], i) for i, c in enumerate(n))
+            self.tags = OrderedDict({
+                str(i): c['properties'][idxkey] if idxkey is not None else ''
+                for i, c in enumerate(n)
+            })
+        if flatten:
+            print('Flatting geometries to a single feature')
+            geoms = [shapely.geometry.shape(geom) for geom, i in geoms_idxs]
+            geoms_idxs = [(shapely.ops.cascaded_union(geoms), 0)]
+        self.geoms_idxs = geoms_idxs
+
+    def rasterize(self, strategy=None, normalize_weights=True, verbose=False):
         """Rasterizes the indicies of the current shapefile.
 
         Parameters
@@ -118,67 +137,25 @@ class IndexRaster(object):
             weights
         normalize_weights: bool, optional
             if using `weighted` strategy, normalize the weights
-        flatten: bool, optional
-            if using `weighted` strategy, flatten all shapes into single feature
-        idxkey: string, optional
-            a key in properties to use. if provided, only the index, value pair
-            will be stored in tags
-        like: string, optional
-            a filename of a raster whose profile should be used
-        profile: dict, optional
-            the profile dictionary from a raster object
         verbose: bool, optional
             print out status information during rasterization
         """
-        if like is None and profile is None:
-            raise ValueError('Either like or profile must be supplied')
+        if self.geoms_idxs is None:
+            raise ValueError('Must call read_shpf() first')
 
-        _profile = collections.defaultdict(lambda: None)
-
-        if like is not None:
-            self.like = like
-            with rio.open(like, 'r') as src:
-                profile = src.profile
-
-        # declare up raster properties
-        _profile.update(profile)
-        shape = (_profile['height'], _profile['width'])
-        transform = _profile['affine']
-        dtype = _profile['dtype']
+        shape = self.shape
+        coords = self.coords
+        nodata = self.nodata
+        dtype = self.dtype
+        geoms_idxs = self.geoms_idxs
+        transform = transform_from_latlon(coords['lat'], coords['lon'])
 
         if verbose:
-            print('Reading in {}'.format(self.shpf))
-        with fio.open(self.shpf, 'r') as n:
-            geoms_idxs = tuple((c['geometry'], i) for i, c in enumerate(n))
+            print('Beginning rasterization with the {} strategy'.format(strategy))
 
-            if strategy == 'weighted':
-                if idxkey is not None:
-                    self.tags = [c['properties'][idxkey] for c in n]
-                else:
-                    self.tags = [c['properties'] for c in n]
-            else:
-                if idxkey is not None:
-                    self.tags = {str(i): c['properties'][idxkey]
-                                 for i, c in enumerate(n)}
-                else:
-                    self.tags = {str(i): c['properties']
-                                 for i, c in enumerate(n)}
-        if flatten:
-            print('Flatting geometries to a single feature')
-            geoms = [shapely.geometry.shape(geom)
-                     for geom, i in geoms_idxs]
-            geoms_idxs = [(shapely.ops.cascaded_union(geoms), 0)]
-
-        if verbose:
-            print('Beginning rasterization of {} with the {} strategy'.format(
-                self.shpf, strategy))
-
-        nodata = -1
-        _profile['nodata'] = -1
-        _profile['dtype'] = np.int32
         if strategy in ['all_touched', 'centroid']:
             at = strategy == 'all_touched'
-            mask = rio.features.rasterize(
+            mask = _rasterize(
                 geoms_idxs, all_touched=at,
                 out_shape=shape, transform=transform, fill=nodata,
                 dtype=dtype)
@@ -192,7 +169,7 @@ class IndexRaster(object):
             mask[mask == _nodata] = nodata
         elif strategy == 'hybrid':
             # centroid mask
-            mask_cent = rio.features.rasterize(
+            mask_cent = _rasterize(
                 geoms_idxs, all_touched=False,
                 out_shape=shape, transform=transform, fill=nodata,
                 dtype=dtype)
@@ -200,7 +177,7 @@ class IndexRaster(object):
                 print('Done with mask 1')
 
             # all touched mask
-            mask_at = rio.features.rasterize(
+            mask_at = _rasterize(
                 geoms_idxs, all_touched=True,
                 out_shape=shape, transform=transform, fill=nodata,
                 dtype=dtype)
@@ -229,5 +206,5 @@ class IndexRaster(object):
         else:
             raise ValueError('Unknown strategy: {}'.format(strategy))
 
-        self.profile = _profile
-        self.mask = mask
+        return xr.DataArray(mask, name='indicies',
+                            coords=coords, dims=('lat', 'lon'), attrs=self.tags)
