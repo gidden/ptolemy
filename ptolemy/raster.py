@@ -1,3 +1,6 @@
+import itertools
+import warnings
+
 import fiona as fio
 import numpy as np
 import xarray as xr
@@ -119,18 +122,20 @@ class Rasterize(object):
     def read_shpf(self, shpf, idxkey=None, flatten=None):
         with fio.open(shpf, 'r') as n:
             geoms_idxs = tuple((c['geometry'], i) for i, c in enumerate(n))
-            self.tags = OrderedDict({
-                str(i): c['properties'][idxkey] if idxkey is not None else ''
+            self.tags = tuple(
+                (str(i), c['properties'][idxkey] if idxkey is not None else '')
                 for i, c in enumerate(n)
-            })
+            )
         if flatten:
             print('Flatting geometries to a single feature')
             geoms = [shapely.geometry.shape(geom) for geom, i in geoms_idxs]
             geoms_idxs = [(shapely.ops.cascaded_union(geoms), 0)]
         self.geoms_idxs = geoms_idxs
         self.idxkey = idxkey
+        return self
 
-    def rasterize(self, strategy=None, normalize_weights=True, verbose=False):
+    def rasterize(self, strategy=None, normalize_weights=True, verbose=False,
+                  drop=True):
         """Rasterizes the indicies of the current shapefile.
 
         Parameters
@@ -149,6 +154,8 @@ class Rasterize(object):
             if using `weighted` strategy, normalize the weights
         verbose: bool, optional
             print out status information during rasterization
+        drop: bool, optional
+            drop where nodata values in both lat and lon
         """
         if self.geoms_idxs is None:
             raise ValueError('Must call read_shpf() first')
@@ -217,9 +224,12 @@ class Rasterize(object):
             raise ValueError('Unknown strategy: {}'.format(strategy))
 
         name = self.idxkey or 'indicies'
-        return xr.DataArray(mask, name=name,
-                            coords=coords, dims=('lat', 'lon'),
-                            attrs=self.tags)
+        da = xr.DataArray(mask, name=name,
+                          coords=coords, dims=('lat', 'lon'),
+                          attrs=self.tags)
+        if drop:
+            da = da.where(da != nodata, drop=True)
+        return da
 
 
 def full_like(other, fill_value=np.nan, add_coords={}, replace_vars=[]):
@@ -230,21 +240,60 @@ def full_like(other, fill_value=np.nan, add_coords={}, replace_vars=[]):
 
     if replace_vars:
         data = data.drop(data.data_vars.keys())
-        coords = data.coords
         dims = data.dims.keys()
         shape = tuple(data.dims.values())
         empty = np.zeros(shape=shape)
         empty[empty == 0] = fill_value
+        empty = xr.DataArray(empty, coords=data.coords, dims=data.dims)
         for var in replace_vars:
-            data[var] = xr.DataArray(empty, coords=data.coords, dims=dims)
+            data[var] = empty.copy()
     return data
 
 
-def df_to_raster(df, idxraster, coords=[], ds=None):
+def update_raster(raster, series, idxraster, idx_map):
+    """Updates a raster array given a raster of indicies and values as columns.
+
+    Parameters
+    ----------
+    raster : np.ndarray
+        the base raster on which to apply updates
+    idxrasters : list of np.ndarray or strings
+        rasters of indicies where idx_map[series.index] -> idx
+    series : list of pd.Series
+        values to use to update the raster, the Index of the Series must be the
+        keys of the associated idx_map
+    """
+    for validx in series.index:
+        # coerce to int because all gdal rasters must have string
+        # values. if no idx map is provided, assume map and value
+        # indicies match
+        mapidx = int(idx_map[validx])
+        # this appears to be the fastest way to do replacement in pure
+        # python
+        replace = idxraster == mapidx
+        if not np.any(replace):
+            warnings.warn('No values found in raster for {}: {}'.format(
+                mapidx, validx))
+        raster[replace] = series.loc[validx]
+
+
+def df_to_raster(df, idxraster, idx_col, idx_map, ds=None, coords=[], cols=[]):
     if ds is None:
-        coords = {c: sorted(df[x].unique()) for c in coords}
-        coords['lat'] = idxraster['lat']
-        coords['lon'] = idxraster['lon']
-        ds = empty_ds(idxraster, coords=coords)
-    # create and fill with nans
-    # replace directly from idx raster lat/lon
+        cols = cols or sorted(set(df.columns) - set(coords + [idx_col]))
+        _coords = {c: sorted(df[c].unique()) for c in coords}
+        ds = full_like(idxraster, add_coords=_coords, replace_vars=cols)
+
+    idxiter = itertools.product(*(sorted(df[c].unique()) for c in coords))
+    df = df.set_index(coords)
+    for idxs in idxiter:
+        sel = dict(zip(coords, idxs))
+        data = df.loc[idxs].set_index(idx_col)
+        for col in cols:
+            update_raster(
+                ds[col].sel(**sel).values,
+                data[col],
+                idxraster,
+                idx_map
+            )
+
+    return ds
