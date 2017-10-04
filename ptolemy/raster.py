@@ -225,10 +225,13 @@ class Rasterize(object):
 
         name = self.idxkey or 'indicies'
         da = xr.DataArray(mask, name=name,
-                          coords=coords, dims=('lat', 'lon'),
-                          attrs=self.tags)
+                          coords=coords, dims=('lat', 'lon'))
         if drop:
             da = da.where(da != nodata, drop=True)
+            da.values[da.isnull()] = nodata
+            da = da.astype(dtype)
+        #  must be done outside of ctr if drop, not sure why
+        da.attrs = self.tags
         return da
 
 
