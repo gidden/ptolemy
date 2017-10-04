@@ -6,6 +6,7 @@ from affine import Affine
 from collections import OrderedDict
 
 from rasterio.features import rasterize as _rasterize
+from xarray.core.utils import SortedKeysDict
 
 
 def rasterize_majority(geoms_idxs, atrans, shape, nodata, ignore_nodata=False, verbose=False):
@@ -84,21 +85,20 @@ def transform_from_latlon(lat, lon):
     return trans * scale
 
 
-class IndexRaster(object):
+class Rasterize(object):
     """Example use case
 
     ```
-    rs = IndexRaster(like='data.nc')
+    rs = Rasterize(like='data.nc')
     rs.read_shapefile('boundaries.shp', idxkey='ISO3')
     da = rs.rasterize(strategy='all_touched')
-    da.to_netcdf('index_raster.nc')
+    da.to_netcdf('raster.nc')
     ```
     """
 
     def __init__(self, shape=None, coords=None, like=None):
         # mask could be an xarray dataset
         # profile and tags could be attributes
-        self.mask = None
         self.tags = None
         self.geoms_idxs = None
 
@@ -128,6 +128,7 @@ class IndexRaster(object):
             geoms = [shapely.geometry.shape(geom) for geom, i in geoms_idxs]
             geoms_idxs = [(shapely.ops.cascaded_union(geoms), 0)]
         self.geoms_idxs = geoms_idxs
+        self.idxkey = idxkey
 
     def rasterize(self, strategy=None, normalize_weights=True, verbose=False):
         """Rasterizes the indicies of the current shapefile.
@@ -215,5 +216,35 @@ class IndexRaster(object):
         else:
             raise ValueError('Unknown strategy: {}'.format(strategy))
 
-        return xr.DataArray(mask, name='indicies',
-                            coords=coords, dims=('lat', 'lon'), attrs=self.tags)
+        name = self.idxkey or 'indicies'
+        return xr.DataArray(mask, name=name,
+                            coords=coords, dims=('lat', 'lon'),
+                            attrs=self.tags)
+
+
+def full_like(other, fill_value=np.nan, add_coords={}, replace_vars=[]):
+    data = xr.full_like(other, fill_value).to_dataset()
+    for k, v in add_coords.items():
+        data[k] = v
+        data[k].assign_coords()
+
+    if replace_vars:
+        data = data.drop(data.data_vars.keys())
+        coords = data.coords
+        dims = data.dims.keys()
+        shape = tuple(data.dims.values())
+        empty = np.zeros(shape=shape)
+        empty[empty == 0] = fill_value
+        for var in replace_vars:
+            data[var] = xr.DataArray(empty, coords=data.coords, dims=dims)
+    return data
+
+
+def df_to_raster(df, idxraster, coords=[], ds=None):
+    if ds is None:
+        coords = {c: sorted(df[x].unique()) for c in coords}
+        coords['lat'] = idxraster['lat']
+        coords['lon'] = idxraster['lon']
+        ds = empty_ds(idxraster, coords=coords)
+    # create and fill with nans
+    # replace directly from idx raster lat/lon
