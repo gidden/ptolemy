@@ -228,7 +228,7 @@ class Rasterize(object):
                           coords=coords, dims=('lat', 'lon'))
         if drop:
             da = da.where(da != nodata, drop=True)
-            da.values[da.isnull()] = nodata
+            da.values[np.isnan(da.values)] = nodata
             da = da.astype(dtype)
         #  must be done outside of ctr if drop, not sure why
         da.attrs = self.tags
