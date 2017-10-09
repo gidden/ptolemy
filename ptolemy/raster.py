@@ -236,7 +236,9 @@ class Rasterize(object):
 
 
 def full_like(other, fill_value=np.nan, add_coords={}, replace_vars=[]):
-    data = xr.full_like(other, fill_value).to_dataset()
+    data = xr.full_like(other, fill_value)
+    if isinstance(data, xr.DataArray):
+        data = data.to_dataset()
     for k, v in add_coords.items():
         data[k] = v
         data[k].assign_coords()

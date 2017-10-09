@@ -45,7 +45,7 @@ class Zones(object):
     #         x = np.sort(x)
     #     return x
 
-    def stats(self, raster, func=np.nansum, idx_values=None):
+    def stats(self, raster, func=np.nansum):
         """Provides zonal statistics given a data raster and an index raster.
 
         Parameters
@@ -82,7 +82,5 @@ class Zones(object):
         #     assert(idxs)
         #     data = {
         #         idx: func(raster * self.mask[:, :, idx]) for idx in idxs}
-
-        # implement idx_values here
 
         return data
