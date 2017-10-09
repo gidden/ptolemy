@@ -4,6 +4,7 @@ import warnings
 import fiona as fio
 import numpy as np
 import xarray as xr
+import pandas as pd
 
 from affine import Affine
 from collections import OrderedDict
@@ -292,7 +293,10 @@ def df_to_raster(df, idxraster, idx_col, idx_map, ds=None, coords=[], cols=[]):
     df = df.set_index(coords)
     for idxs in idxiter:
         sel = dict(zip(coords, idxs))
-        data = df.loc[idxs].set_index(idx_col)
+        data = df.loc[idxs]
+        if isinstance(data, pd.Series):  # only one entry, transpose to DF
+            data = data.to_frame().T
+        data = data.set_index(idx_col)
         for col in cols:
             update_raster(
                 ds[col].sel(**sel).values,
