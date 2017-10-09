@@ -269,6 +269,8 @@ def update_raster(raster, series, idxraster, idx_map):
         values to use to update the raster, the Index of the Series must be the
         keys of the associated idx_map
     """
+    if raster.shape != idxraster.shape:
+        raise ValueError('Value and Index rasters are not the same shape')
     for validx in series.index:
         # coerce to int because all gdal rasters must have string
         # values. if no idx map is provided, assume map and value
@@ -301,7 +303,7 @@ def df_to_raster(df, idxraster, idx_col, idx_map, ds=None, coords=[], cols=[]):
             update_raster(
                 ds[col].sel(**sel).values,
                 data[col],
-                idxraster,
+                idxraster.values,
                 idx_map
             )
 
