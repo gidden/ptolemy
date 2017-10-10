@@ -282,7 +282,10 @@ def update_raster(raster, series, idxraster, idx_map):
         if not np.any(replace):
             warnings.warn('No values found in raster for {}: {}'.format(
                 mapidx, validx))
-        raster[replace] = series.loc[validx]
+        val = series.loc[validx]
+        if isinstance(val, pd.Series):
+            raise ValueError('Multiple entries found for {}'.format(validx))
+        raster[replace] = val
 
 
 def df_to_raster(df, idxraster, idx_col, idx_map, ds=None, coords=[], cols=[]):
