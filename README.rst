@@ -13,8 +13,8 @@ ptolemy helper
     :target: https://ptolemy.readthedocs.io/en/latest/
     :alt: Read the Docs
 
-.. image:: https://img.shields.io/pypi/v/ptolemy
-    :target: https://pypi.org/project/ptolemy/
+.. image:: https://img.shields.io/pypi/v/ptolemy-iamc
+    :target: https://pypi.org/project/ptolemy-iamc/
     :alt: PyPI
 
 
