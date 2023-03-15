@@ -49,10 +49,11 @@ def test_rasterize(strategy):
     exp.close()
 
 
-@pytest.mark.long
-def test_rasterize_longtime():
-    strategy = "weighted"
-    test_rasterize(strategy)
+# Commented for now, as the filesize is 2.2GB
+# @pytest.mark.long
+# def test_rasterize_longtime():
+#     strategy = "weighted"
+#     test_rasterize(strategy)
 
 
 if __name__ == "__main__":
