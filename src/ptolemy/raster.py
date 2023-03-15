@@ -1,19 +1,18 @@
 import itertools
 import warnings
+from collections import OrderedDict
 
 import fiona as fio
 import numpy as np
-import xarray as xr
 import pandas as pd
-
+import xarray as xr
 from affine import Affine
-from collections import OrderedDict
-
 from rasterio.features import rasterize as _rasterize
-from xarray.core.utils import SortedKeysDict
 
 
-def rasterize_majority(geoms_idxs, atrans, shape, nodata, ignore_nodata=False, verbose=False):
+def rasterize_majority(
+    geoms_idxs, atrans, shape, nodata, ignore_nodata=False, verbose=False
+):
     """rasterize shapes such that the shape with the majority of area in a
     cell is assigned to that cell
 
@@ -29,7 +28,7 @@ def rasterize_majority(geoms_idxs, atrans, shape, nodata, ignore_nodata=False, v
     new_affine, new_shape = rescale_raster_props(atrans, shape, scale)
 
     if verbose:
-        print('Beginning rasterization')
+        print("Beginning rasterization")
 
     a = _rasterize(
         geoms_idxs,
@@ -37,10 +36,11 @@ def rasterize_majority(geoms_idxs, atrans, shape, nodata, ignore_nodata=False, v
         transform=new_affine,
         dtype=np.int32,  # could be made an argument in the future!
         fill=nodata,
-        all_touched=True)
+        all_touched=True,
+    )
 
     if verbose:
-        print('Finished rasterization')
+        print("Finished rasterization")
 
     weights = np.ones(a.shape, dtype=np.int)
     if ignore_nodata:
@@ -51,15 +51,14 @@ def rasterize_majority(geoms_idxs, atrans, shape, nodata, ignore_nodata=False, v
     # try to be fast..
     try:
         if verbose:
-            print('Beginning fast modal calculation')
-        ret = utils.block_apply_2d(
-            a, (scale, scale), func=fast_mode, weights=weights)
+            print("Beginning fast modal calculation")
+        ret = utils.block_apply_2d(a, (scale, scale), func=fast_mode, weights=weights)
     except:
         warnings.warn("Could not apply fast mode function, using scipy's mode")
         ret = utils.block_apply_2d(a, (scale, scale), func=mode)
 
     if verbose:
-        print('Process complete')
+        print("Process complete")
 
     return ret
 
@@ -70,15 +69,12 @@ def rasterize_pctcover(geom, atrans, shape):
     new_affine, new_shape = rescale_raster_props(atrans, shape, scale)
 
     rasterized = _rasterize(
-        [(geom, 1)],
-        out_shape=new_shape,
-        transform=new_affine,
-        fill=0,
-        all_touched=True)
+        [(geom, 1)], out_shape=new_shape, transform=new_affine, fill=0, all_touched=True
+    )
 
-    min_dtype = np.min_scalar_type(scale ** 2)
+    min_dtype = np.min_scalar_type(scale**2)
     rv_array = rebin_sum(rasterized, shape, min_dtype)
-    return rv_array.astype('float32') / (scale ** 2)
+    return rv_array.astype("float32") / (scale**2)
 
 
 def transform_from_latlon(lat, lon):
@@ -110,33 +106,37 @@ class Rasterize(object):
         self.dtype = np.int32
 
         if like is not None:
-            with xr.open_dataarray(like) as da:
-                self.shape = da.shape
-                self.coords = {
-                    'lat': da.coords['lat'],
-                    'lon': da.coords['lon'],
-                }
+            if isinstance(like, (xr.DataArray)):
+                da = like
+            else:
+                da = xr.open_dataarray(like)
+            self.shape = da.shape
+            self.coords = {
+                "lat": da.coords["lat"],
+                "lon": da.coords["lon"],
+            }
         else:
             self.shape = shape
             self.coords = coords
 
     def read_shpf(self, shpf, idxkey=None, flatten=None):
-        with fio.open(shpf, 'r') as n:
-            geoms_idxs = tuple((c['geometry'], i) for i, c in enumerate(n))
+        with fio.open(shpf, "r") as n:
+            geoms_idxs = tuple((c["geometry"], i) for i, c in enumerate(n))
             self.tags = tuple(
-                (str(i), c['properties'][idxkey] if idxkey is not None else '')
+                (str(i), c["properties"][idxkey] if idxkey is not None else "")
                 for i, c in enumerate(n)
             )
         if flatten:
-            print('Flatting geometries to a single feature')
+            print("Flatting geometries to a single feature")
             geoms = [shapely.geometry.shape(geom) for geom, i in geoms_idxs]
             geoms_idxs = [(shapely.ops.cascaded_union(geoms), 0)]
         self.geoms_idxs = geoms_idxs
         self.idxkey = idxkey
         return self
 
-    def rasterize(self, strategy=None, normalize_weights=True, verbose=False,
-                  drop=True):
+    def rasterize(
+        self, strategy=None, normalize_weights=True, verbose=False, drop=True
+    ):
         """Rasterizes the indicies of the current shapefile.
 
         Parameters
@@ -159,74 +159,92 @@ class Rasterize(object):
             drop where nodata values in both lat and lon
         """
         if self.geoms_idxs is None:
-            raise ValueError('Must call read_shpf() first')
+            raise ValueError("Must call read_shpf() first")
 
         shape = self.shape
         coords = self.coords
         nodata = self.nodata
         dtype = self.dtype
         geoms_idxs = self.geoms_idxs
-        transform = transform_from_latlon(coords['lat'], coords['lon'])
+        transform = transform_from_latlon(coords["lat"], coords["lon"])
 
         if verbose:
-            print('Beginning rasterization with the {} strategy'.format(strategy))
+            print("Beginning rasterization with the {} strategy".format(strategy))
 
-        if strategy in ['all_touched', 'centroid']:
-            at = strategy == 'all_touched'
+        if strategy in ["all_touched", "centroid"]:
+            at = strategy == "all_touched"
             mask = _rasterize(
-                geoms_idxs, all_touched=at,
-                out_shape=shape, transform=transform, fill=nodata,
-                dtype=dtype)
-        elif strategy in ['majority', 'majority_ignore_nodata']:
-             # use one more than the biggest for fast mode calcuation (no
-             # negative numbers)
+                geoms_idxs,
+                all_touched=at,
+                out_shape=shape,
+                transform=transform,
+                fill=nodata,
+                dtype=dtype,
+            )
+        elif strategy in ["majority", "majority_ignore_nodata"]:
+            # use one more than the biggest for fast mode calcuation (no
+            # negative numbers)
             _nodata = geoms_idxs[-1][1] + 1
-            ignore_nodata = strategy == 'majority_ignore_nodata'
-            mask = rasterize_majority(geoms_idxs, transform, shape, _nodata,
-                                      ignore_nodata=ignore_nodata, verbose=verbose)
+            ignore_nodata = strategy == "majority_ignore_nodata"
+            mask = rasterize_majority(
+                geoms_idxs,
+                transform,
+                shape,
+                _nodata,
+                ignore_nodata=ignore_nodata,
+                verbose=verbose,
+            )
             mask[mask == _nodata] = nodata
-        elif strategy == 'hybrid':
+        elif strategy == "hybrid":
             # centroid mask
             mask_cent = _rasterize(
-                geoms_idxs, all_touched=False,
-                out_shape=shape, transform=transform, fill=nodata,
-                dtype=dtype)
+                geoms_idxs,
+                all_touched=False,
+                out_shape=shape,
+                transform=transform,
+                fill=nodata,
+                dtype=dtype,
+            )
             if verbose:
-                print('Done with mask 1')
+                print("Done with mask 1")
 
             # all touched mask
             mask_at = _rasterize(
-                geoms_idxs, all_touched=True,
-                out_shape=shape, transform=transform, fill=nodata,
-                dtype=dtype)
+                geoms_idxs,
+                all_touched=True,
+                out_shape=shape,
+                transform=transform,
+                fill=nodata,
+                dtype=dtype,
+            )
             if verbose:
-                print('Done with mask 2')
+                print("Done with mask 2")
 
             # add all border cells not covered by mask_cent to mask_cent
             # Note:
             # must subtract nodata because we are adding to places where mask_cent ==
             # nodata
-            mask = mask_cent + \
-                np.where((mask_cent == nodata) & (mask_at != nodata),
-                         mask_at - nodata, 0)
+            mask = mask_cent + np.where(
+                (mask_cent == nodata) & (mask_at != nodata), mask_at - nodata, 0
+            )
             if verbose:
-                print('Done with mask 3')
-        elif strategy == 'weighted':
+                print("Done with mask 3")
+        elif strategy == "weighted":
             nodata = 0
-            _profile['nodata'] = nodata
-            _profile['dtype'] = np.float32
-            mask = np.dstack(rasterize_pctcover(geom, transform, shape)
-                             for geom, i in geoms_idxs)
+            _profile["nodata"] = nodata
+            _profile["dtype"] = np.float32
+            mask = np.dstack(
+                rasterize_pctcover(geom, transform, shape) for geom, i in geoms_idxs
+            )
             if normalize_weights:
                 # normalize along z-axis to catch coastal cells
                 zsum = np.sum(mask, axis=2)
                 mask /= zsum[:, :, np.newaxis]
         else:
-            raise ValueError('Unknown strategy: {}'.format(strategy))
+            raise ValueError("Unknown strategy: {}".format(strategy))
 
-        name = self.idxkey or 'indicies'
-        da = xr.DataArray(mask, name=name,
-                          coords=coords, dims=('lat', 'lon'))
+        name = self.idxkey or "indicies"
+        da = xr.DataArray(mask, name=name, coords=coords, dims=("lat", "lon"))
         if drop:
             da = da.where(da != nodata, drop=True)
             da.values[np.isnan(da.values)] = nodata
@@ -270,7 +288,7 @@ def update_raster(raster, series, idxraster, idx_map):
         keys of the associated idx_map
     """
     if raster.shape != idxraster.shape:
-        raise ValueError('Value and Index rasters are not the same shape')
+        raise ValueError("Value and Index rasters are not the same shape")
     for validx in series.index:
         # coerce to int because all gdal rasters must have string
         # values. if no idx map is provided, assume map and value
@@ -280,11 +298,10 @@ def update_raster(raster, series, idxraster, idx_map):
         # python
         replace = idxraster == mapidx
         if not np.any(replace):
-            warnings.warn('No values found in raster for {}: {}'.format(
-                mapidx, validx))
+            warnings.warn("No values found in raster for {}: {}".format(mapidx, validx))
         val = series.loc[validx]
         if isinstance(val, pd.Series):
-            raise ValueError('Multiple entries found for {}'.format(validx))
+            raise ValueError("Multiple entries found for {}".format(validx))
         raster[replace] = val
 
 
@@ -304,10 +321,7 @@ def df_to_raster(df, idxraster, idx_col, idx_map, ds=None, coords=[], cols=[]):
         data = data.set_index(idx_col)
         for col in cols:
             update_raster(
-                ds[col].sel(**sel).values,
-                data[col],
-                idxraster.values,
-                idx_map
+                ds[col].sel(**sel).values, data[col], idxraster.values, idx_map
             )
 
     return ds

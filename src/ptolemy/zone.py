@@ -2,7 +2,6 @@ import numpy as np
 
 
 class Zones(object):
-
     def __init__(self, mask):
         self.mask = mask
 
@@ -70,11 +69,10 @@ class Zones(object):
         #         raster[raster == nodata] = 0
         mask = self.mask
         nodata = -1
-        raster = raster.sel(lat=mask.coords['lat'], lon=mask.coords['lon'])
+        raster = raster.sel(lat=mask.coords["lat"], lon=mask.coords["lon"])
         idxs = np.unique(mask)
         idxs = idxs[(idxs != nodata) & (~np.isnan(idxs))]
-        data = {idx: func(raster.values[mask.values == idx])
-                for idx in idxs}
+        data = {idx: func(raster.values[mask.values == idx]) for idx in idxs}
 
         # if len(self.mask.shape) == 2:
         # else:
