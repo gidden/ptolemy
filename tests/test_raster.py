@@ -31,6 +31,13 @@ def test_read_shpf(flatten, exp_size, idxkey):
     assert r.idxkey == idxkey
 
 
+def _do_rasterize(strategy):
+    r = pt.Rasterize(like=LIKE)
+    r.read_shpf(URL, idxkey="iso_a3")
+    idxr = r.rasterize(strategy=strategy, verbose=True)
+    return idxr
+
+
 @pytest.mark.parametrize("strategy", RASTER_STRATEGIES[:-1])
 def test_rasterize(strategy):
     r = pt.Rasterize(like=LIKE)
@@ -48,16 +55,9 @@ def test_rasterize_longtime():
     test_rasterize(strategy)
 
 
-def _do_rasterize(strategy):
-    r = pt.Rasterize(like=LIKE)
-    r.read_shpf(URL, idxkey="iso_a3")
-    idxr = r.rasterize(strategy=strategy, verbose=True)
-    return idxr
-
-
 if __name__ == "__main__":
     # save rasterized data for regression
-    for strategy in RASTER_STRATEGIES[:-1]:
+    for strategy in RASTER_STRATEGIES[-1:]:
         print(f"Working on {strategy}")
         idxr = _do_rasterize(strategy)
         idxr.to_netcdf(DATA_PATH / f"{strategy}.nc", mode="w")

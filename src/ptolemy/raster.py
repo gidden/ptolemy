@@ -1,7 +1,6 @@
 import itertools
 import logging
 import warnings
-from collections import OrderedDict
 
 import fiona as fio
 import numpy as np
@@ -240,6 +239,7 @@ class Rasterize(object):
         dtype = self.dtype
         geoms_idxs = self.geoms_idxs
         transform = transform_from_latlon(coords["lat"], coords["lon"])
+        dims = ["lat", "lon"]
 
         if verbose:
             logger.info("Beginning rasterization with the {} strategy".format(strategy))
@@ -304,6 +304,8 @@ class Rasterize(object):
                 logger.info("Done with mask 3")
         elif strategy == "weighted":
             nodata = 0
+            dims += ["geometry"]
+            coords["geometry"] = [i for geom, i in geoms_idxs]
             mask = np.dstack(
                 tuple(
                     rasterize_pctcover(geom, transform, shape) for geom, i in geoms_idxs
@@ -317,7 +319,7 @@ class Rasterize(object):
             raise ValueError("Unknown strategy: {}".format(strategy))
 
         name = self.idxkey or "indicies"
-        da = xr.DataArray(mask, name=name, coords=coords, dims=("lat", "lon"))
+        da = xr.DataArray(mask, name=name, coords=coords, dims=dims)
         if drop:
             da = da.where(da != nodata, drop=True)
             da.values[np.isnan(da.values)] = nodata
