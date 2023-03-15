@@ -1,4 +1,5 @@
 import itertools
+import logging
 import warnings
 from collections import OrderedDict
 
@@ -8,6 +9,10 @@ import pandas as pd
 import xarray as xr
 from affine import Affine
 from rasterio.features import rasterize as _rasterize
+from shapely.geometry import shape
+from shapely.ops import unary_union
+
+logger = logging.getLogger(__name__)
 
 
 def rasterize_majority(
@@ -28,7 +33,7 @@ def rasterize_majority(
     new_affine, new_shape = rescale_raster_props(atrans, shape, scale)
 
     if verbose:
-        print("Beginning rasterization")
+        logger.info("Beginning rasterization")
 
     a = _rasterize(
         geoms_idxs,
@@ -40,7 +45,7 @@ def rasterize_majority(
     )
 
     if verbose:
-        print("Finished rasterization")
+        logger.info("Finished rasterization")
 
     weights = np.ones(a.shape, dtype=np.int)
     if ignore_nodata:
@@ -51,14 +56,14 @@ def rasterize_majority(
     # try to be fast..
     try:
         if verbose:
-            print("Beginning fast modal calculation")
+            logger.info("Beginning fast modal calculation")
         ret = utils.block_apply_2d(a, (scale, scale), func=fast_mode, weights=weights)
     except:
         warnings.warn("Could not apply fast mode function, using scipy's mode")
         ret = utils.block_apply_2d(a, (scale, scale), func=mode)
 
     if verbose:
-        print("Process complete")
+        logger.info("Process complete")
 
     return ret
 
@@ -127,9 +132,9 @@ class Rasterize(object):
                 for i, c in enumerate(n)
             )
         if flatten:
-            print("Flatting geometries to a single feature")
-            geoms = [shapely.geometry.shape(geom) for geom, i in geoms_idxs]
-            geoms_idxs = [(shapely.ops.cascaded_union(geoms), 0)]
+            logger.info("Flatting geometries to a single feature")
+            geoms = [shape(geom) for geom, i in geoms_idxs]
+            geoms_idxs = [(unary_union(geoms), 0)]
         self.geoms_idxs = geoms_idxs
         self.idxkey = idxkey
         return self
@@ -169,7 +174,7 @@ class Rasterize(object):
         transform = transform_from_latlon(coords["lat"], coords["lon"])
 
         if verbose:
-            print("Beginning rasterization with the {} strategy".format(strategy))
+            logger.info("Beginning rasterization with the {} strategy".format(strategy))
 
         if strategy in ["all_touched", "centroid"]:
             at = strategy == "all_touched"
@@ -206,7 +211,7 @@ class Rasterize(object):
                 dtype=dtype,
             )
             if verbose:
-                print("Done with mask 1")
+                logger.info("Done with mask 1")
 
             # all touched mask
             mask_at = _rasterize(
@@ -218,7 +223,7 @@ class Rasterize(object):
                 dtype=dtype,
             )
             if verbose:
-                print("Done with mask 2")
+                logger.info("Done with mask 2")
 
             # add all border cells not covered by mask_cent to mask_cent
             # Note:
@@ -228,7 +233,7 @@ class Rasterize(object):
                 (mask_cent == nodata) & (mask_at != nodata), mask_at - nodata, 0
             )
             if verbose:
-                print("Done with mask 3")
+                logger.info("Done with mask 3")
         elif strategy == "weighted":
             nodata = 0
             _profile["nodata"] = nodata

@@ -41,6 +41,7 @@ dependencies = [
     'xarray',
     'affine',
     'rasterio',
+    'shapely',
     'netCDF4'
 ]
 
