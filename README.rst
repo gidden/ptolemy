@@ -9,8 +9,8 @@ ptolemy helper
     :target: https://codecov.io/gh/gidden/ptolemy
     :alt: Codecov
 
-.. image:: https://img.shields.io/readthedocs/ptolemy/latest?label=Read%20the%20Docs
-    :target: https://ptolemy.readthedocs.io/en/latest/
+.. image:: https://img.shields.io/readthedocs/ptolemy-iamc/latest?label=Read%20the%20Docs
+    :target: https://ptolemy-iamc.readthedocs.io/en/latest/
     :alt: Read the Docs
 
 .. image:: https://img.shields.io/pypi/v/ptolemy-iamc

@@ -14,7 +14,7 @@ from importlib.metadata import version
 
 source_suffix = ".rst"
 master_doc = "index"
-project = "ptolemy"
+project = "ptolemy-iamc"
 year = "2020"
 author = ", ".join(["Matthew Gidden"])
 copyright = f"{year}, {author}"
