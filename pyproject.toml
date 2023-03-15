@@ -1,5 +1,5 @@
 [project]
-name = "ptolemy"
+name = "ptolemy-iamc"
 description = "A library for rasterizing shapefiles onto grids"
 readme = "README.rst"
 license = {text = "MIT"}
