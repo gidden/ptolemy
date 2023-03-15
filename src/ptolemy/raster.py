@@ -8,11 +8,72 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from affine import Affine
+from numpy.lib.stride_tricks import as_strided
 from rasterio.features import rasterize as _rasterize
 from shapely.geometry import shape
 from shapely.ops import unary_union
 
 logger = logging.getLogger(__name__)
+
+
+def rescale_raster_props(affine, shape, scale):
+    """Return new transform and shape for a raster for it to be scaled in each
+    lat/long dimension by a factor"""
+    pixel_width = affine[0] / scale
+    pixel_height = affine[4] / scale
+    topleftlon = affine[2]
+    topleftlat = affine[5]
+
+    new_affine = Affine(pixel_width, 0, topleftlon, 0, pixel_height, topleftlat)
+
+    new_shape = (shape[0] * scale, shape[1] * scale)
+
+    return new_affine, new_shape
+
+
+def block_view_2d(a, blockshape):
+    """Collapse a 2d array into constituent blocks with a given shape."""
+    shape = (
+        int(a.shape[0] / blockshape[0]),
+        int(a.shape[1] / blockshape[1]),
+    ) + blockshape
+    strides = (blockshape[0] * a.strides[0], blockshape[1] * a.strides[1]) + a.strides
+    return as_strided(a, shape=shape, strides=strides)
+
+
+def block_apply_2d(a, blockshape, func=np.sum, weights=None):
+    """Apply a function to blocks of an array.
+
+    Returns a reduced array with shape:
+    a.shape[0] / blockshape[0], a.shape[1] / blockshape[1]
+
+    TODO: the inner loop can be sped up (likely with cython)
+
+    Parameters
+    ----------
+    weights: array with same shape as a, optional
+        a weight matrix to supply to func (func must take a weights parameter)
+    """
+    if weights is not None:
+        weights = block_view_2d(weights, blockshape)
+
+    blocks = block_view_2d(a, blockshape)
+    newshape = int(a.shape[0] / blockshape[0]), int(a.shape[1] / blockshape[1])
+    newa = np.empty(newshape, dtype=a.dtype)
+
+    for i, j in itertools.product(range(newshape[0]), range(newshape[1])):
+        _weights = weights[i, j, :, :].ravel() if weights is not None else None
+        _a = blocks[i, j, :, :].ravel()
+        if weights is not None:
+            if np.array_equal(_weights, np.zeros(_weights.shape)):
+                newa[i, j] = _a[0]  # all weights are 0, just take first value
+            else:
+                newa[i, j] = func(_a, weights=_weights)
+
+        else:
+            newa[i, j] = func(_a)
+
+    return newa
 
 
 def rasterize_majority(
@@ -47,7 +108,7 @@ def rasterize_majority(
     if verbose:
         logger.info("Finished rasterization")
 
-    weights = np.ones(a.shape, dtype=np.int)
+    weights = np.ones(a.shape, dtype=int)
     if ignore_nodata:
         weights[a == nodata] = 0
 
@@ -57,15 +118,22 @@ def rasterize_majority(
     try:
         if verbose:
             logger.info("Beginning fast modal calculation")
-        ret = utils.block_apply_2d(a, (scale, scale), func=fast_mode, weights=weights)
+        ret = block_apply_2d(a, (scale, scale), func=fast_mode, weights=weights)
     except:
         warnings.warn("Could not apply fast mode function, using scipy's mode")
-        ret = utils.block_apply_2d(a, (scale, scale), func=mode)
+        ret = block_apply_2d(a, (scale, scale), func=mode)
 
     if verbose:
         logger.info("Process complete")
 
     return ret
+
+
+def rebin_sum(a, shape, dtype):
+    # https://stackoverflow.com/questions/8090229/
+    #   resize-with-averaging-or-rebin-a-numpy-2d-array/8090605#8090605
+    sh = shape[0], a.shape[0] // shape[0], shape[1], a.shape[1] // shape[1]
+    return a.reshape(sh).sum(-1, dtype=dtype).sum(1, dtype=dtype)
 
 
 def rasterize_pctcover(geom, atrans, shape):
@@ -236,10 +304,10 @@ class Rasterize(object):
                 logger.info("Done with mask 3")
         elif strategy == "weighted":
             nodata = 0
-            _profile["nodata"] = nodata
-            _profile["dtype"] = np.float32
             mask = np.dstack(
-                rasterize_pctcover(geom, transform, shape) for geom, i in geoms_idxs
+                tuple(
+                    rasterize_pctcover(geom, transform, shape) for geom, i in geoms_idxs
+                )
             )
             if normalize_weights:
                 # normalize along z-axis to catch coastal cells

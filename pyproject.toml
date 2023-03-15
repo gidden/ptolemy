@@ -41,6 +41,7 @@ dependencies = [
     'xarray',
     'affine',
     'rasterio',
+    'scipy',    
     'shapely',
     'netCDF4'
 ]
@@ -85,7 +86,13 @@ lint = [
 # you will need to delete this section from setup.cfg.
 #norecursedirs =
 #migrations
-addopts = "-p pytest_cov"
+addopts = """
+-p pytest_cov 
+-m "not long"
+"""
+markers = [
+    "long: tests that are long enough to only be run on CI", 
+]
 python_files = [
     "test_*.py",
     "*_test.py",

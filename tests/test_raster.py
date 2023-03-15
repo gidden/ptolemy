@@ -7,15 +7,7 @@ import xarray as xr
 URL = "https://d2ad6b4ur7yvpq.cloudfront.net/naturalearth-3.3.0/ne_110m_admin_0_countries.geojson"
 DATA_PATH = pathlib.Path(__file__).parent / "test_data"
 LIKE = DATA_PATH / "ssp1_2010_rural.nc"
-RASTER_STRATEGIES = ["all_touched", "centroid"]
-
-
-def make_index_raster(pth, iso, idxkey="NAME_1", adm=1):
-    r = pt.Rasterize(like=LIKE)
-    r.read_shpf(shpf.format(pth=pth, iso=iso, adm=adm), idxkey=idxkey)
-    idxr = r.rasterize(strategy="hybrid", verbose=True)
-    encoding = encodings(idxr, zlib=True, complevel=5, dtype="int32")
-    idxr.to_netcdf(idxf.format(pth=pth, iso=iso), encoding=encoding)
+RASTER_STRATEGIES = ["all_touched", "centroid", "hybrid", "majority", "weighted"]
 
 
 @pytest.mark.parametrize("as_file", [True, False])
@@ -39,12 +31,21 @@ def test_read_shpf(flatten, exp_size, idxkey):
     assert r.idxkey == idxkey
 
 
-@pytest.mark.parametrize("strategy", RASTER_STRATEGIES)
+@pytest.mark.parametrize("strategy", RASTER_STRATEGIES[:-1])
 def test_rasterize(strategy):
     r = pt.Rasterize(like=LIKE)
     r.read_shpf(URL)
-    idxr = r.rasterize(strategy=strategy, verbose=True)
-    idxr.close()
+    obs = _do_rasterize(strategy)
+    exp = xr.open_dataarray(DATA_PATH / f"{strategy}.nc", mode="r")
+    assert obs.equals(exp)
+    obs.close()
+    exp.close()
+
+
+@pytest.mark.long
+def test_rasterize_longtime():
+    strategy = "weighted"
+    test_rasterize(strategy)
 
 
 def _do_rasterize(strategy):
@@ -56,7 +57,8 @@ def _do_rasterize(strategy):
 
 if __name__ == "__main__":
     # save rasterized data for regression
-    for strategy in RASTER_STRATEGIES:
+    for strategy in RASTER_STRATEGIES[:-1]:
+        print(f"Working on {strategy}")
         idxr = _do_rasterize(strategy)
         idxr.to_netcdf(DATA_PATH / f"{strategy}.nc", mode="w")
         idxr.close()
