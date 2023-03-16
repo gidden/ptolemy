@@ -17,11 +17,9 @@ jobs:
         # see version 0.10.1
         # https://github.com/gidden/ptolemy/releases/tag/v0.10.1
         # below the list of tox envs that you wish to include in the matrix
- 
- # include when doing tox later
- #       include:
- #         # on all platforms and versions do everything
- #         - tox-envs: [docs, lint, build, test]
+        include:
+          # on all platforms and versions do everything
+          - tox-envs: [docs, lint, build, test]
 
     runs-on: self-hosted
 
