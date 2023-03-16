@@ -20,7 +20,7 @@ author = ", ".join(["Matthew Gidden"])
 copyright = f"{year}, {author}"
 
 # Retrieve package version from installed metadata
-release = version("ptolemy")
+release = version("ptolemy-iamc")
 version = ".".join(release.split(".")[:3])
 
 
