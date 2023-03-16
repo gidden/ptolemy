@@ -42,7 +42,9 @@ jobs:
       run: pytest tests
 
     - name: Build Docs
-      run: sphinx-build -E -b html docs docs/html
+      run: |
+        conda install pandoc
+        sphinx-build -E -b html docs docs/html
     # hack for now, replace with below after fixing
 
     # - name: Install tox

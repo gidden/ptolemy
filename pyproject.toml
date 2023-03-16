@@ -62,7 +62,6 @@ docs = [
     "sphinx-rtd-theme",
     "nbsphinx",
     "ipython",
-    "pandoc",
 ]
 
 test = [
