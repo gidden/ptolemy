@@ -11,6 +11,7 @@ LIKE = DATA_PATH / "ssp1_2010_rural.nc"
 RASTER_STRATEGIES = ["all_touched", "centroid", "hybrid", "majority", "weighted"]
 
 
+@pytest.mark.lfs
 @pytest.mark.parametrize("as_file", [True, False])
 def test_init(as_file):
     assert os.path.exists(LIKE)
@@ -24,6 +25,7 @@ def test_init(as_file):
     assert r.coords["lon"].equals(like["lon"])
 
 
+@pytest.mark.lfs
 @pytest.mark.parametrize("flatten,exp_size", [(True, 1), (False, 177)])
 @pytest.mark.parametrize("idxkey", [None, "iso_a3"])
 def test_read_shpf(flatten, exp_size, idxkey):
@@ -40,6 +42,7 @@ def _do_rasterize(strategy):
     return idxr
 
 
+@pytest.mark.lfs
 @pytest.mark.parametrize("strategy", RASTER_STRATEGIES[:-1])
 def test_rasterize(strategy):
     r = pt.Rasterize(like=LIKE)
