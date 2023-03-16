@@ -23,7 +23,7 @@ Summary
 
 Ptolemy provides support capabilities for rasterizing shapefiles on to grids. 
 
-Check out the [docs](https://ptolemy-iamc.readthedocs.io/)
+Check out the `documentation`_
 
 Issues and Discussions
 ----------------------
