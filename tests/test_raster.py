@@ -1,3 +1,4 @@
+import os
 import pathlib
 
 import ptolemy as pt
@@ -12,6 +13,7 @@ RASTER_STRATEGIES = ["all_touched", "centroid", "hybrid", "majority", "weighted"
 
 @pytest.mark.parametrize("as_file", [True, False])
 def test_init(as_file):
+    assert os.path.exists(LIKE)
     like = xr.open_dataarray(LIKE)
     if as_file:
         r = pt.Rasterize(like=LIKE)
