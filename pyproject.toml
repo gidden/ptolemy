@@ -38,7 +38,7 @@ dependencies = [
     'pandas>=1.2',
     'deprecated',
     'fiona',
-    'xarray',
+    'xarray[io]',
     'affine',
     'rasterio',
     'scipy',    
