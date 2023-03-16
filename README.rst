@@ -38,4 +38,4 @@ want to suggest an improvement, or open a discussion if you want to discuss.
 .. _tox: https://tox.readthedocs.io/en/latest/
 .. _ReadTheDocs: https://readthedocs.org/
 .. _issue: htts://github.com/gidden/ptolemy/issues/new
-.. _documentation: https://ptolemy.readthedocs.io/en/latest/
+.. _documentation: https://ptolemy-iamc.readthedocs.io/en/latest/
