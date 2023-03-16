@@ -11,6 +11,11 @@ LIKE = DATA_PATH / "ssp1_2010_rural.nc"
 RASTER_STRATEGIES = ["all_touched", "centroid", "hybrid", "majority", "weighted"]
 
 
+# yes this is silly, but needed until we get a test without lfs
+def test_foo():
+    assert 42 == 42
+
+
 @pytest.mark.lfs
 @pytest.mark.parametrize("as_file", [True, False])
 def test_init(as_file):
