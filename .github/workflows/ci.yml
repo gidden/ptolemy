@@ -12,7 +12,6 @@ jobs:
     strategy:
       # fail-fast: false
       matrix:
-        platform: [ubuntu-latest, macos-latest, windows-latest]
         python-version: [3.8, 3.11] # to minimise complexity we only test a min and a max version
         # you can separate the tox-envs in different .yml files
         # see version 0.10.1
@@ -24,7 +23,7 @@ jobs:
  #         # on all platforms and versions do everything
  #         - tox-envs: [docs, lint, build, test]
 
-    runs-on: ${{ matrix.platform }}
+    runs-on: self-hosted
 
     steps:
     - name: Checkout with lfs
