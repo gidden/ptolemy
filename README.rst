@@ -1,12 +1,12 @@
-ptolemy helper
-======================
+ptolemy: efficient rasterizing of shapefiles
+============================================
 
-.. image:: https://github.com/gidden/ptolemy/workflows/ci/badge.svg?branch=main
-    :target: https://github.com/gidden/ptolemy/actions?workflow=ci
+.. image:: https://github.com/iiasa/ptolemy/workflows/ci/badge.svg?branch=main
+    :target: https://github.com/iiasa/ptolemy/actions?workflow=ci
     :alt: CI
 
-.. image:: https://codecov.io/gh/gidden/ptolemy/branch/main/graph/badge.svg
-    :target: https://codecov.io/gh/gidden/ptolemy
+.. image:: https://codecov.io/gh/iiasa/ptolemy/branch/main/graph/badge.svg
+    :target: https://codecov.io/gh/iiasa/ptolemy
     :alt: Codecov
 
 .. image:: https://img.shields.io/readthedocs/ptolemy-iamc/latest?label=Read%20the%20Docs
@@ -21,7 +21,9 @@ ptolemy helper
 Summary
 -------
 
-Ptolemy provides support capabilities for rasterizing shapefiles on to grids
+Ptolemy provides support capabilities for rasterizing shapefiles on to grids. 
+
+Check out the [docs](https://ptolemy-iamc.readthedocs.io/)
 
 Issues and Discussions
 ----------------------
