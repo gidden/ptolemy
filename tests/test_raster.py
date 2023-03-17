@@ -49,7 +49,7 @@ def _do_rasterize(strategy):
 
 
 @pytest.mark.lfs
-@pytest.mark.parametrize("strategy", RASTER_STRATEGIES[:-1])
+@pytest.mark.parametrize("strategy", RASTER_STRATEGIES)
 def test_rasterize(strategy):
     r = pt.Rasterize(like=LIKE)
     r.read_shpf(URL)

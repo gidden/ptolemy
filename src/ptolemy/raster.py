@@ -306,21 +306,24 @@ class Rasterize(object):
             nodata = 0
             dims += ["geometry"]
             coords["geometry"] = [i for geom, i in geoms_idxs]
-            mask = np.dstack(
-                tuple(
-                    rasterize_pctcover(geom, transform, shape) for geom, i in geoms_idxs
+            mask = xr.DataArray(
+                np.dstack(
+                    tuple(
+                        rasterize_pctcover(geom, transform, shape)
+                        for geom, i in geoms_idxs
+                    )
                 )
             )
             if normalize_weights:
                 # normalize along z-axis to catch coastal cells
-                zsum = np.sum(mask, axis=2)
-                mask /= zsum[:, :, np.newaxis]
+                zsum = xr.DataArray(np.sum(mask, axis=2))
+                mask /= zsum
         else:
             raise ValueError("Unknown strategy: {}".format(strategy))
 
         name = self.idxkey or "indicies"
         da = xr.DataArray(mask, name=name, coords=coords, dims=dims)
-        if drop:
+        if drop and not "weighted":
             da = da.where(da != nodata, drop=True)
             da.values[np.isnan(da.values)] = nodata
             da = da.astype(dtype)
