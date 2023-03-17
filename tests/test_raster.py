@@ -60,13 +60,6 @@ def test_rasterize(strategy):
     exp.close()
 
 
-# Commented for now, as the filesize is 2.2GB
-# @pytest.mark.long
-# def test_rasterize_longtime():
-#     strategy = "weighted"
-#     test_rasterize(strategy)
-
-
 if __name__ == "__main__":
     # save rasterized data for regression
     for strategy in RASTER_STRATEGIES:

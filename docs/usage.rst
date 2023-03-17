@@ -9,6 +9,7 @@ You can either view static versions of them below, or download and execute them 
    :maxdepth: 2
 
    notebooks/introduction.ipynb
+   notebooks/dataframe_to_raster.ipynb
 
 .. _interactive jupyter notebooks:
    https://github.com/gidden/ptolemy/tree/main/docs/notebooks

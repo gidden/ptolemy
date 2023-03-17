@@ -384,6 +384,25 @@ def update_raster(raster, series, idxraster, idx_map):
 
 
 def df_to_raster(df, idxraster, idx_col, idx_map, ds=None, coords=[], cols=[]):
+    """Takes data from a pd.DataFrame and deposits it on a raster
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        a dataframe with an index aligned with `coords` and data in other columns
+    idxraster : xr.DataArray
+        an index raster, e.g., from `pt.Rasterize()`
+    idx_col : string
+        the name of the column linking `df` to `idxraster`
+    idx_map : map
+        a map of strings to values of `idxraster` to generate the raster
+    ds : xr.DataSet(), optional
+        a model dataset to use
+    coords : list(xr.Coordinate), optional
+        coordinates to use to generate a raster
+    cols : list(string), optional
+        the columns to apply to the raster
+    """
     if ds is None:
         cols = cols or sorted(set(df.columns) - set(coords + [idx_col]))
         _coords = {c: sorted(df[c].unique()) for c in coords}
