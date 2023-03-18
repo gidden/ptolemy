@@ -34,7 +34,6 @@ jobs:
         python -m pip install tox
 
     - name: Run tox environments for testing
-      uses: docker://pandoc/core:2.9
       run: tox -e ${{ join(matrix.tox-envs, ',') }}
 
     # from https://github.com/codecov/codecov-action
