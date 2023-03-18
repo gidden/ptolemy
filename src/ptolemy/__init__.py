@@ -1,6 +1,6 @@
 from importlib.metadata import version as _version
 
-from . import raster, zone
+from . import raster
 from .raster import Rasterize, df_to_raster, raster_to_df
 
 try:

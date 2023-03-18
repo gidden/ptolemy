@@ -446,11 +446,12 @@ def raster_to_df(raster, idxraster, idxmap, func=None, nodata=-1):
 
     def default_func(ary):
         v = np.unique(ary[~np.isnan(ary)])
-        if len(v) == 0:
-            raise ValueError("No values found in raster")
         if len(v) > 1:
             raise ValueError("Non-unique values found in raster")
-        return v[0]
+        if len(v) == 0:
+            return np.nan
+        else:
+            return v[0]
 
     if raster.shape != idxraster.shape:
         raise ValueError("Raster and index raster must have same shape")
@@ -464,5 +465,5 @@ def raster_to_df(raster, idxraster, idxmap, func=None, nodata=-1):
         try:
             data[idxmap[str(idx)]] = func(ary)
         except:
-            data[idxmap[str(idx)]] = np.nan
+            continue
     return pd.Series(data)
