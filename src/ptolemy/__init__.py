@@ -1,7 +1,7 @@
 from importlib.metadata import version as _version
 
 from . import raster, zone
-from .raster import Rasterize, df_to_raster, update_raster
+from .raster import Rasterize, df_to_raster, raster_to_df
 
 try:
     __version__ = _version("ptolemy")

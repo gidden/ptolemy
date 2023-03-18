@@ -406,7 +406,7 @@ def df_to_raster(df, idxraster, idx_col, idx_map, ds=None, coords=[], cols=[]):
     if ds is None:
         cols = cols or sorted(set(df.columns) - set(coords + [idx_col]))
         _coords = {c: sorted(df[c].unique()) for c in coords}
-        ds = full_like(idxraster, add_coords=_coords, replace_vars=cols)
+        ds = full_like(idxraster.copy(), add_coords=_coords, replace_vars=cols)
 
     idxiter = itertools.product(*(sorted(df[c].unique()) for c in coords))
     df = df.set_index(coords)
@@ -422,3 +422,47 @@ def df_to_raster(df, idxraster, idx_col, idx_map, ds=None, coords=[], cols=[]):
             )
 
     return ds
+
+
+def raster_to_df(raster, idxraster, idxmap, func=None, nodata=-1):
+    """Takes data from a raster and makes a pd.DataFrame. Zonal statistics can
+    be derived with this function.
+
+    By default, unique values in the index raster areas are returned.
+
+    Parameters
+    ----------
+    raster : xr.DataArray
+        an array of data aligned with the lat/lon dimensions of `idxraster`
+    idxraster : xr.DataArray
+        an index raster, e.g., from `pt.Rasterize()`
+    idx_map : map
+        a map of strings to values of `idxraster` to generate the raster
+    func : unary function, optional, default: np.unique
+        a function with can be applied to an array of data
+    nodata : optional
+        the nodata value of `idxraster`
+    """
+
+    def default_func(ary):
+        v = np.unique(ary[~np.isnan(ary)])
+        if len(v) == 0:
+            raise ValueError("No values found in raster")
+        if len(v) > 1:
+            raise ValueError("Non-unique values found in raster")
+        return v[0]
+
+    if raster.shape != idxraster.shape:
+        raise ValueError("Raster and index raster must have same shape")
+
+    func = func or default_func
+    idxs = np.unique(idxraster)
+    idxs = idxs[(idxs != nodata) & (~np.isnan(idxs))]
+    data = {}
+    for idx in idxs:
+        ary = raster.values[idxraster.values == idx]
+        try:
+            data[idxmap[str(idx)]] = func(ary)
+        except:
+            data[idxmap[str(idx)]] = np.nan
+    return pd.Series(data)
