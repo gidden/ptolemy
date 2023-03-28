@@ -76,7 +76,11 @@ def test_df_to_weighted_raster():
     assert np.isclose(ds.data.sel(year=2015).sum(), 3348.12920833)
 
 
-
+def test_raster_area():
+    exp = pt.raster_area_from_file(LIKE)
+    assert exp.lat[0] > exp.lat[1]
+    assert exp[0] < exp[1]
+    assert np.isclose(exp.sum(), 17153923.52409903)
 
 
 if __name__ == "__main__":

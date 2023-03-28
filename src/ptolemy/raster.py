@@ -14,6 +14,68 @@ from shapely.ops import unary_union
 
 logger = logging.getLogger(__name__)
 
+def raster_area_from_file(file, lat_name='lat'):
+    """Returns the grid cell area by latitude of a raster file
+
+    Parameters
+    ----------
+    file : str, pathlib.Path, xr.Dataset, or similar 
+        a file from which to take transform and latitude objects
+    lat_name : str, optional
+        the name of the latitude dimension or coordinate
+
+    Returns
+    -------
+    area : an xr.DataArray of latitude cell area with units of km^2
+    """
+    if isinstance(file, (xr.DataArray, xr.Dataset)):
+        src = file
+    else:
+        src = xr.open_dataset(file) 
+    transform = src.rio.transform()
+    lat = src[lat_name]
+    a = raster_area(len(lat), transform)
+    return xr.DataArray(a.squeeze(), coords={lat_name: lat})
+
+def raster_area(ny, transform):
+    """Returns an array of a given shape defining geospatial area.
+
+    Parameters
+    ----------
+    ny : int
+        the number of cells in the latitudinal (y) dimension
+    transform : affine.Affine or similar
+        if a list is provided it is assumed that it is ordered as a GDAL transform
+
+    Returns
+    -------
+    area : a 1-D column vector describing the area of each latitudinal cell in
+    km^2
+
+    Example
+    -------
+    >>> with rasterio.open('raster.nc') as src:
+    >>>     transform = src.affine
+    >>>     raster = src.read()[0]
+    >>> area = ptolemy.raster_area(raster.shape[0], transform)
+    >>> normalized = raster / area
+
+    """
+    radius = 6371  # authalic earth radius in km
+
+    t = transform._asdict()
+    diff_lat = t['e']
+    diff_lon = t['a']
+    top = t['f']  # top lat
+    bottom = top + diff_lat * ny  # bottom lat
+    # this is due to differences in how rasters and spatial data define the origin
+    # SEE: https://www.perrygeo.com/python-affine-transforms.html
+    # TODO: confirm that this is the behavior I want to support
+    rads = np.linspace(bottom, top, num=ny + 1) * np.pi / 180
+    area = np.array([np.abs(np.sin(rads[i + 1]) - np.sin(rads[i]))
+                     for i in range(len(rads) - 1)]) * diff_lon * radius ** 2
+
+    return area.reshape(ny, 1)
 
 def rescale_raster_props(affine, shape, scale):
     """Return new transform and shape for a raster for it to be scaled in each
