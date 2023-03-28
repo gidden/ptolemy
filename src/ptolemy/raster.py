@@ -304,8 +304,8 @@ class Rasterize(object):
                 logger.info("Done with mask 3")
         elif strategy == "weighted":
             nodata = 0
-            dims += ["geometry"]
-            coords["geometry"] = [i for geom, i in geoms_idxs]
+            dims += [self.idxkey]
+            coords[self.idxkey] = [self.tags[i][1] for geom, i in geoms_idxs]
             mask = xr.DataArray(
                 np.dstack(
                     tuple(
@@ -321,7 +321,7 @@ class Rasterize(object):
         else:
             raise ValueError("Unknown strategy: {}".format(strategy))
 
-        name = self.idxkey or "indicies"
+        name = "geometry_index"
         da = xr.DataArray(mask, name=name, coords=coords, dims=dims)
         if drop and not "weighted":
             da = da.where(da != nodata, drop=True)
@@ -422,6 +422,41 @@ def df_to_raster(df, idxraster, idx_col, idx_map, ds=None, coords=[], cols=[]):
             )
 
     return ds
+
+def df_to_weighted_raster(df, idxraster, extra_coords=[], sum_dim=None):
+    """Translates data to a raster with multiple weighting layers. 
+    This can be used to apply panel data for a series of geometries (e.g.,
+    countries) onto gridded data.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        a dataframe with columns or indicies aligned with coordinates in
+        `indexraster`
+    idxraster : xr.DataArray
+        an index raster with a layer coordinate aligned with `df`. This raster
+        can be made with `pt.Rasterize().rasterize()` using the
+        `strategy="weighted"` option.
+    extra_coords : list, optional
+        additional columns in `df` which should be translated to be coordinates. For
+        example, if you want to put panel data onto a raster and that data has a
+        "year" column, then you should call this with `coords=["year"]`
+    sum_dim : list, optional
+        string names of dimension(s) to sum along. This option can be used,
+        e.g., to collapse the multiple weighted layers into one 'global' result.
+    """
+    if len(set(df.index.names) - set(idxraster.dims) - set([None])) == 0:
+        # no multi index set, need to align with raster
+        idx = list(set(df.columns) & set(idxraster.dims)) + extra_coords
+        df = df.set_index(idx)
+    data = xr.Dataset.from_dataframe(df)
+    if len(data.data_vars) > 1:
+        raise ValueError('Currently only support rasterizing one data variable with `df_to_weighted_raster`')
+        data = data[[k for k in data.data_vars.keys()][0]] # take only data variable
+    result = data * idxraster
+    if sum_dim is not None:
+        result = result.sum(dim=sum_dim)
+    return result
 
 
 def raster_to_df(raster, idxraster, idxmap, func=None, nodata=-1):
