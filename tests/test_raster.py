@@ -1,11 +1,12 @@
-import os
 import pathlib
 
-import ptolemy as pt
+import numpy as np
+import pandas as pd
 import pytest
 import xarray as xr
-import pandas as pd
-import numpy as np
+
+import ptolemy as pt
+
 
 URL = "https://d2ad6b4ur7yvpq.cloudfront.net/naturalearth-3.3.0/ne_110m_admin_0_countries.geojson"
 DATA_PATH = pathlib.Path(__file__).parent / "test_data"
@@ -42,6 +43,7 @@ def _do_rasterize(strategy):
     idxr = r.rasterize(strategy=strategy, verbose=True)
     return idxr
 
+
 @pytest.mark.parametrize("strategy", RASTER_STRATEGIES)
 def test_rasterize(strategy):
     obs = _do_rasterize(strategy)
@@ -50,29 +52,35 @@ def test_rasterize(strategy):
     obs.close()
     exp.close()
 
+
 def test_df_to_raster():
     r = pt.Rasterize(like=LIKE)
     r.read_shpf(URL, idxkey="adm0_a3")
-    idxr = r.rasterize(strategy='hybrid', verbose=True)
-    df = pd.DataFrame({
-        "adm0_a3": ['USA'] * 2 + ['MEX'] * 2,
-        "year": [2015, 2020] * 2,
-        "data": [15, 20, 5, 10],
-    })
+    idxr = r.rasterize(strategy="hybrid", verbose=True)
+    df = pd.DataFrame(
+        {
+            "adm0_a3": ["USA"] * 2 + ["MEX"] * 2,
+            "year": [2015, 2020] * 2,
+            "data": [15, 20, 5, 10],
+        }
+    )
     idx_map = {v: int(k) for k, v in idxr.attrs.items() if int(k) in np.unique(idxr)}
-    ds = pt.df_to_raster(df, idxr, 'adm0_a3', idx_map, coords=['year'])
+    ds = pt.df_to_raster(df, idxr, "adm0_a3", idx_map, coords=["year"])
     assert ds.sum() == 2855
+
 
 def test_df_to_weighted_raster():
     r = pt.Rasterize(like=LIKE)
     r.read_shpf(URL, idxkey="adm0_a3")
-    idxr = r.rasterize(strategy='weighted', verbose=True)
-    df = pd.DataFrame({
-        "adm0_a3": ['USA'] * 2 + ['MEX'] * 2,
-        "year": [2015, 2020] * 2,
-        "data": [15, 20, 5, 10],
-    })
-    ds = pt.df_to_weighted_raster(df, idxr, extra_coords=['year'], sum_dim=['adm0_a3'])
+    idxr = r.rasterize(strategy="weighted", verbose=True)
+    df = pd.DataFrame(
+        {
+            "adm0_a3": ["USA"] * 2 + ["MEX"] * 2,
+            "year": [2015, 2020] * 2,
+            "data": [15, 20, 5, 10],
+        }
+    )
+    ds = pt.df_to_weighted_raster(df, idxr, extra_coords=["year"], sum_dim=["adm0_a3"])
     assert np.isclose(ds.data.sel(year=2015).sum(), 3348.12920833)
 
 
