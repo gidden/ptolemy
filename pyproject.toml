@@ -43,7 +43,8 @@ dependencies = [
     'rasterio',
     'scipy',    
     'shapely',
-    'netCDF4'
+    'netCDF4',
+    'geopandas',
 ]
 
 dynamic = ["version"]
