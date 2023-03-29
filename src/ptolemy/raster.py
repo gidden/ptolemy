@@ -3,37 +3,27 @@ import logging
 import warnings
 
 import fiona as fio
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import geopandas as gpd
 import xarray as xr
 from affine import Affine
 from numpy.lib.stride_tricks import as_strided
 from rasterio.features import rasterize as _rasterize
-from shapely.geometry import shape, Polygon
+from shapely.geometry import Polygon, shape
 from shapely.ops import unary_union
+
 
 logger = logging.getLogger(__name__)
 
-def raster_area_from_lats(lats, crs=4326):
-    offset = (lats[1] - lats[0]) / 2
 
-    return gpd.GeoDataFrame(
-        dict(
-            geometry=[
-                box(*c) for c in np.nditer([-offset, lats - offset, offset, lats + offset ])
-            ],
-            lat=lats
-        ),
-        crs=crs
-    ).set_index("lat").to_crs("Sphere_Cylindrical_Equal_Area").area
-
-def cell_area_from_file(file, lat_name='lat', lon_name=None):
-    """Returns the grid cell area by latitude of a raster file
+def cell_area_from_file(file, lat_name="lat", lon_name=None):
+    """
+    Returns the grid cell area by latitude of a raster file.
 
     Parameters
     ----------
-    file : str, pathlib.Path, xr.Dataset, or similar 
+    file : str, pathlib.Path, xr.Dataset, or similar
         a file from which to take transform and latitude objects
     lat_name : str, optional
         the name of the latitude dimension or coordinate
@@ -53,8 +43,11 @@ def cell_area_from_file(file, lat_name='lat', lon_name=None):
     crs = ds.rio.crs if ds.rio.crs else 4326
     return cell_area(lats, lons, crs)
 
+
 def cell_area(lats, lons=None, crs=4326):
-    """Computes the grid cell area given centroid latitute and longitude coordinates
+    """
+    Computes the grid cell area given centroid latitute and longitude
+    coordinates.
 
     Parameters
     ----------
@@ -73,20 +66,36 @@ def cell_area(lats, lons=None, crs=4326):
     lon_offset = (lons[1] - lons[0]) / 2 if lons is not None else lat_offset
 
     lat_pairs = np.nditer([lats - lat_offset, lats + lat_offset])
-    
-    return gpd.GeoDataFrame(
-        dict(
-            geometry=[
-                Polygon([(-lon_offset, lat[0]), (-lon_offset, lat[1]), (lon_offset, lat[1]), (lon_offset, lat[0])]) for lat in lat_pairs
-            ],
-            lat=lats
-        ),
-        crs=crs
-    ).set_index("lat").to_crs("Sphere_Cylindrical_Equal_Area").area
+
+    return (
+        gpd.GeoDataFrame(
+            dict(
+                geometry=[
+                    Polygon(
+                        [
+                            (-lon_offset, lat[0]),
+                            (-lon_offset, lat[1]),
+                            (lon_offset, lat[1]),
+                            (lon_offset, lat[0]),
+                        ]
+                    )
+                    for lat in lat_pairs
+                ],
+                lat=lats,
+            ),
+            crs=crs,
+        )
+        .set_index("lat")
+        .to_crs("Sphere_Cylindrical_Equal_Area")
+        .area
+    )
+
 
 def rescale_raster_props(affine, shape, scale):
-    """Return new transform and shape for a raster for it to be scaled in each
-    lat/long dimension by a factor"""
+    """
+    Return new transform and shape for a raster for it to be scaled in each
+    lat/long dimension by a factor.
+    """
     pixel_width = affine[0] / scale
     pixel_height = affine[4] / scale
     topleftlon = affine[2]
@@ -100,7 +109,9 @@ def rescale_raster_props(affine, shape, scale):
 
 
 def block_view_2d(a, blockshape):
-    """Collapse a 2d array into constituent blocks with a given shape."""
+    """
+    Collapse a 2d array into constituent blocks with a given shape.
+    """
     shape = (
         int(a.shape[0] / blockshape[0]),
         int(a.shape[1] / blockshape[1]),
@@ -110,7 +121,8 @@ def block_view_2d(a, blockshape):
 
 
 def block_apply_2d(a, blockshape, func=np.sum, weights=None):
-    """Apply a function to blocks of an array.
+    """
+    Apply a function to blocks of an array.
 
     Returns a reduced array with shape:
     a.shape[0] / blockshape[0], a.shape[1] / blockshape[1]
@@ -147,8 +159,9 @@ def block_apply_2d(a, blockshape, func=np.sum, weights=None):
 def rasterize_majority(
     geoms_idxs, atrans, shape, nodata, ignore_nodata=False, verbose=False
 ):
-    """rasterize shapes such that the shape with the majority of area in a
-    cell is assigned to that cell
+    """
+    Rasterize shapes such that the shape with the majority of area in a cell is
+    assigned to that cell.
 
     Parameters
     ----------
@@ -187,7 +200,7 @@ def rasterize_majority(
         if verbose:
             logger.info("Beginning fast modal calculation")
         ret = block_apply_2d(a, (scale, scale), func=fast_mode, weights=weights)
-    except:
+    except:  # noqa: 722
         warnings.warn("Could not apply fast mode function, using scipy's mode")
         ret = block_apply_2d(a, (scale, scale), func=mode)
 
@@ -226,7 +239,7 @@ def transform_from_latlon(lat, lon):
     return trans * scale
 
 
-class Rasterize(object):
+class Rasterize:
     """Example use case
 
     ```
@@ -278,7 +291,8 @@ class Rasterize(object):
     def rasterize(
         self, strategy=None, normalize_weights=True, verbose=False, drop=True
     ):
-        """Rasterizes the indicies of the current shapefile.
+        """
+        Rasterizes the indicies of the current shapefile.
 
         Parameters
         ----------
@@ -311,7 +325,7 @@ class Rasterize(object):
         dims = ["lat", "lon"]
 
         if verbose:
-            logger.info("Beginning rasterization with the {} strategy".format(strategy))
+            logger.info(f"Beginning rasterization with the {strategy} strategy")
 
         if strategy in ["all_touched", "centroid"]:
             at = strategy == "all_touched"
@@ -388,7 +402,7 @@ class Rasterize(object):
                 zsum = xr.DataArray(np.sum(mask, axis=2))
                 mask /= zsum
         else:
-            raise ValueError("Unknown strategy: {}".format(strategy))
+            raise ValueError(f"Unknown strategy: {strategy}")
 
         name = "geometry_index"
         da = xr.DataArray(mask, name=name, coords=coords, dims=dims)
@@ -411,7 +425,7 @@ def full_like(other, fill_value=np.nan, add_coords={}, replace_vars=[]):
 
     if replace_vars:
         data = data.drop(data.data_vars.keys())
-        dims = data.dims.keys()
+        data.dims.keys()
         shape = tuple(data.dims.values())
         empty = np.zeros(shape=shape)
         empty[empty == 0] = fill_value
@@ -422,7 +436,8 @@ def full_like(other, fill_value=np.nan, add_coords={}, replace_vars=[]):
 
 
 def update_raster(raster, series, idxraster, idx_map):
-    """Updates a raster array given a raster of indicies and values as columns.
+    """
+    Updates a raster array given a raster of indicies and values as columns.
 
     Parameters
     ----------
@@ -445,15 +460,16 @@ def update_raster(raster, series, idxraster, idx_map):
         # python
         replace = idxraster == mapidx
         if not np.any(replace):
-            warnings.warn("No values found in raster for {}: {}".format(mapidx, validx))
+            warnings.warn(f"No values found in raster for {mapidx}: {validx}")
         val = series.loc[validx]
         if isinstance(val, pd.Series):
-            raise ValueError("Multiple entries found for {}".format(validx))
+            raise ValueError(f"Multiple entries found for {validx}")
         raster[replace] = val
 
 
 def df_to_raster(df, idxraster, idx_col, idx_map, ds=None, coords=[], cols=[]):
-    """Takes data from a pd.DataFrame and deposits it on a raster
+    """
+    Takes data from a pd.DataFrame and deposits it on a raster.
 
     Parameters
     ----------
@@ -492,10 +508,12 @@ def df_to_raster(df, idxraster, idx_col, idx_map, ds=None, coords=[], cols=[]):
 
     return ds
 
+
 def df_to_weighted_raster(df, idxraster, extra_coords=[], sum_dim=None):
-    """Translates data to a raster with multiple weighting layers. 
-    This can be used to apply panel data for a series of geometries (e.g.,
-    countries) onto gridded data.
+    """
+    Translates data to a raster with multiple weighting layers. This can be
+    used to apply panel data for a series of geometries (e.g., countries) onto
+    gridded data.
 
     Parameters
     ----------
@@ -520,8 +538,10 @@ def df_to_weighted_raster(df, idxraster, extra_coords=[], sum_dim=None):
         df = df.set_index(idx)
     data = xr.Dataset.from_dataframe(df)
     if len(data.data_vars) > 1:
-        raise ValueError('Currently only support rasterizing one data variable with `df_to_weighted_raster`')
-        data = data[[k for k in data.data_vars.keys()][0]] # take only data variable
+        raise ValueError(
+            "Currently only support rasterizing one data variable with `df_to_weighted_raster`"
+        )
+        data = data[[k for k in data.data_vars.keys()][0]]  # take only data variable
     result = data * idxraster
     if sum_dim is not None:
         result = result.sum(dim=sum_dim)
@@ -529,8 +549,9 @@ def df_to_weighted_raster(df, idxraster, extra_coords=[], sum_dim=None):
 
 
 def raster_to_df(raster, idxraster, idxmap, func=None, nodata=-1):
-    """Takes data from a raster and makes a pd.DataFrame. Zonal statistics can
-    be derived with this function.
+    """
+    Takes data from a raster and makes a pd.DataFrame. Zonal statistics can be
+    derived with this function.
 
     By default, unique values in the index raster areas are returned.
 
@@ -568,6 +589,6 @@ def raster_to_df(raster, idxraster, idxmap, func=None, nodata=-1):
         ary = raster.values[idxraster.values == idx]
         try:
             data[idxmap[str(idx)]] = func(ary)
-        except:
+        except:  # noqa: 722
             continue
     return pd.Series(data)
