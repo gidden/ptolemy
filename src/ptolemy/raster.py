@@ -5,16 +5,30 @@ import warnings
 import fiona as fio
 import numpy as np
 import pandas as pd
+import geopandas as gpd
 import xarray as xr
 from affine import Affine
 from numpy.lib.stride_tricks import as_strided
 from rasterio.features import rasterize as _rasterize
-from shapely.geometry import shape
+from shapely.geometry import shape, Polygon
 from shapely.ops import unary_union
 
 logger = logging.getLogger(__name__)
 
-def raster_area_from_file(file, lat_name='lat'):
+def raster_area_from_lats(lats, crs=4326):
+    offset = (lats[1] - lats[0]) / 2
+
+    return gpd.GeoDataFrame(
+        dict(
+            geometry=[
+                box(*c) for c in np.nditer([-offset, lats - offset, offset, lats + offset ])
+            ],
+            lat=lats
+        ),
+        crs=crs
+    ).set_index("lat").to_crs("Sphere_Cylindrical_Equal_Area").area
+
+def cell_area_from_file(file, lat_name='lat', lon_name=None):
     """Returns the grid cell area by latitude of a raster file
 
     Parameters
@@ -23,59 +37,52 @@ def raster_area_from_file(file, lat_name='lat'):
         a file from which to take transform and latitude objects
     lat_name : str, optional
         the name of the latitude dimension or coordinate
+    lon_name : str, optional
+        the name of the longitude dimension or coordinate
 
     Returns
     -------
-    area : an xr.DataArray of latitude cell area with units of km^2
+    area : a geopandas.Series with index of lats and values of area in m^2
     """
     if isinstance(file, (xr.DataArray, xr.Dataset)):
-        src = file
+        ds = file
     else:
-        src = xr.open_dataset(file) 
-    transform = src.rio.transform()
-    lat = src[lat_name]
-    a = raster_area(len(lat), transform)
-    return xr.DataArray(a.squeeze(), coords={lat_name: lat})
+        ds = xr.open_dataset(file)
+    lats = ds[lat_name]
+    lons = ds[lon_name] if lon_name else None
+    crs = ds.rio.crs if ds.rio.crs else 4326
+    return cell_area(lats, lons, crs)
 
-def raster_area(ny, transform):
-    """Returns an array of a given shape defining geospatial area.
+def cell_area(lats, lons=None, crs=4326):
+    """Computes the grid cell area given centroid latitute and longitude coordinates
 
     Parameters
     ----------
-    ny : int
-        the number of cells in the latitudinal (y) dimension
-    transform : affine.Affine or similar
-        if a list is provided it is assumed that it is ordered as a GDAL transform
+    lats : array or similar
+        latitude coordinates
+    lons : array or similar
+        longitude coordinates
+    crs : string or similar defining CRS, optional
+        the origin CRS
 
     Returns
     -------
-    area : a 1-D column vector describing the area of each latitudinal cell in
-    km^2
-
-    Example
-    -------
-    >>> with rasterio.open('raster.nc') as src:
-    >>>     transform = src.affine
-    >>>     raster = src.read()[0]
-    >>> area = ptolemy.raster_area(raster.shape[0], transform)
-    >>> normalized = raster / area
-
+    area : a geopandas.Series with index of lats and values of area in m^2
     """
-    radius = 6371  # authalic earth radius in km
+    lat_offset = (lats[1] - lats[0]) / 2
+    lon_offset = (lons[1] - lons[0]) / 2 if lons is not None else lat_offset
 
-    t = transform._asdict()
-    diff_lat = t['e']
-    diff_lon = t['a']
-    top = t['f']  # top lat
-    bottom = top + diff_lat * ny  # bottom lat
-    # this is due to differences in how rasters and spatial data define the origin
-    # SEE: https://www.perrygeo.com/python-affine-transforms.html
-    # TODO: confirm that this is the behavior I want to support
-    rads = np.linspace(bottom, top, num=ny + 1) * np.pi / 180
-    area = np.array([np.abs(np.sin(rads[i + 1]) - np.sin(rads[i]))
-                     for i in range(len(rads) - 1)]) * diff_lon * radius ** 2
-
-    return area.reshape(ny, 1)
+    lat_pairs = np.nditer([lats - lat_offset, lats + lat_offset])
+    
+    return gpd.GeoDataFrame(
+        dict(
+            geometry=[
+                Polygon([(-lon_offset, lat[0]), (-lon_offset, lat[1]), (lon_offset, lat[1]), (lon_offset, lat[0])]) for lat in lat_pairs
+            ],
+            lat=lats
+        ),
+        crs=crs
+    ).set_index("lat").to_crs("Sphere_Cylindrical_Equal_Area").area
 
 def rescale_raster_props(affine, shape, scale):
     """Return new transform and shape for a raster for it to be scaled in each
