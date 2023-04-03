@@ -509,7 +509,7 @@ def df_to_raster(df, idxraster, idx_col, idx_map, ds=None, coords=[], cols=[]):
     return ds
 
 
-def df_to_weighted_raster(df, idxraster, extra_coords=[], sum_dim=None):
+def df_to_weighted_raster(df, idxraster, col=None, extra_coords=[], sum_dim=None):
     """
     Translates data to a raster with multiple weighting layers. This can be
     used to apply panel data for a series of geometries (e.g., countries) onto
@@ -524,6 +524,8 @@ def df_to_weighted_raster(df, idxraster, extra_coords=[], sum_dim=None):
         an index raster with a layer coordinate aligned with `df`. This raster
         can be made with `pt.Rasterize().rasterize()` using the
         `strategy="weighted"` option.
+    col : str, optional
+        the column in `df` to cast to the map
     extra_coords : list, optional
         additional columns in `df` which should be translated to be coordinates. For
         example, if you want to put panel data onto a raster and that data has a
@@ -536,6 +538,8 @@ def df_to_weighted_raster(df, idxraster, extra_coords=[], sum_dim=None):
         # no multi index set, need to align with raster
         idx = list(set(df.columns) & set(idxraster.dims)) + extra_coords
         df = df.set_index(idx)
+    if col is not None:
+        df = df[col].to_frame()
     data = xr.Dataset.from_dataframe(df)
     if len(data.data_vars) > 1:
         raise ValueError(
