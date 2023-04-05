@@ -425,7 +425,6 @@ def full_like(other, fill_value=np.nan, add_coords={}, replace_vars=[]):
 
     if replace_vars:
         data = data.drop(data.data_vars.keys())
-        data.dims.keys()
         shape = tuple(data.dims.values())
         empty = np.zeros(shape=shape)
         empty[empty == 0] = fill_value
@@ -545,7 +544,7 @@ def df_to_weighted_raster(df, idxraster, col=None, extra_coords=[], sum_dim=None
         raise ValueError(
             "Currently only support rasterizing one data variable with `df_to_weighted_raster`"
         )
-        data = data[list(data.data_vars)][0]]  # take only data variable
+        data = data[list(data.data_vars)][0]  # take only data variable
     result = data * idxraster
     if sum_dim is not None:
         result = result.sum(dim=sum_dim)
