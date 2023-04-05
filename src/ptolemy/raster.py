@@ -578,6 +578,8 @@ def raster_to_df(
     drop_zeros : bool, optional
         drop zeros from the dataframe before returning
     """
+    # TODO: translate single idxraster to weighted raster with 1s
+    #       if idx_map is given
     # idxs = np.unique(idxraster)
     # idxs = idxs[(idxs != nodata) & (~np.isnan(idxs))]
 
