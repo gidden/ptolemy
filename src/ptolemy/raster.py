@@ -545,7 +545,7 @@ def df_to_weighted_raster(df, idxraster, col=None, extra_coords=[], sum_dim=None
         raise ValueError(
             "Currently only support rasterizing one data variable with `df_to_weighted_raster`"
         )
-        data = data[[k for k in data.data_vars.keys()][0]]  # take only data variable
+        data = data[list(data.data_vars)][0]]  # take only data variable
     result = data * idxraster
     if sum_dim is not None:
         result = result.sum(dim=sum_dim)
