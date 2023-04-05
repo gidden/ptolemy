@@ -46,7 +46,7 @@ def cell_area_from_file(file, lat_name="lat", lon_name=None):
 
 def cell_area(lats, lons=None, crs=4326):
     """
-    Computes the grid cell area given centroid latitute and longitude
+    Computes the grid cell area given centroid latitude and longitude
     coordinates.
 
     Parameters
