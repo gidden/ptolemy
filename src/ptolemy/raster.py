@@ -551,7 +551,9 @@ def df_to_weighted_raster(df, idxraster, col=None, extra_coords=[], sum_dim=None
     return result
 
 
-def raster_to_df(raster, idxraster, idxmap, func=None, nodata=-1):
+def raster_to_df(
+    raster, idxraster, idx_map=None, nodata=-1, func="max", drop_zeros=True
+):
     """
     Takes data from a raster and makes a pd.DataFrame. Zonal statistics can be
     derived with this function.
@@ -564,34 +566,30 @@ def raster_to_df(raster, idxraster, idxmap, func=None, nodata=-1):
         an array of data aligned with the lat/lon dimensions of `idxraster`
     idxraster : xr.DataArray
         an index raster, e.g., from `pt.Rasterize()`
-    idx_map : map
-        a map of strings to values of `idxraster` to generate the raster
-    func : unary function, optional, default: np.unique
-        a function with can be applied to an array of data
+    idx_map : dict, optional
+        a map of strings to values of `idxraster` to generate the
     nodata : optional
         the nodata value of `idxraster`
+    func : string, optional
+        a function with can be applied to an array of data. currently supports:
+            - max
+            - sum
+            - mean
+    drop_zeros : bool, optional
+        drop zeros from the dataframe before returning
     """
+    # idxs = np.unique(idxraster)
+    # idxs = idxs[(idxs != nodata) & (~np.isnan(idxs))]
 
-    def default_func(ary):
-        v = np.unique(ary[~np.isnan(ary)])
-        if len(v) > 1:
-            raise ValueError("Non-unique values found in raster")
-        if len(v) == 0:
-            return np.nan
-        else:
-            return v[0]
-
-    if raster.shape != idxraster.shape:
-        raise ValueError("Raster and index raster must have same shape")
-
-    func = func or default_func
-    idxs = np.unique(idxraster)
-    idxs = idxs[(idxs != nodata) & (~np.isnan(idxs))]
-    data = {}
-    for idx in idxs:
-        ary = raster.values[idxraster.values == idx]
-        try:
-            data[idxmap[str(idx)]] = func(ary)
-        except:  # noqa: 722
-            continue
-    return pd.Series(data)
+    data = raster * idxraster
+    # TODO: there has to be a better way to do this
+    dim = ["lat", "lon"]
+    if func == "max":
+        df = data.max(dim=dim).to_dataframe()
+    elif func == "sum":
+        df = data.sum(dim=dim).to_dataframe()
+    elif func == "mean":
+        df = data.mean(dim=dim).to_dataframe()
+    if drop_zeros:
+        df = df[df != 0].dropna()
+    return df.reset_index()

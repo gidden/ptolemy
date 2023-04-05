@@ -2,6 +2,7 @@ import pathlib
 
 import numpy as np
 import pandas as pd
+import pandas.testing as pdt
 import pytest
 import xarray as xr
 
@@ -53,7 +54,7 @@ def test_rasterize(strategy):
     exp.close()
 
 
-def test_df_to_raster():
+def test_df_to_raster_roundtrip():
     r = pt.Rasterize(like=LIKE)
     r.read_shpf(URL, idxkey="adm0_a3")
     idxr = r.rasterize(strategy="hybrid", verbose=True)
@@ -65,11 +66,15 @@ def test_df_to_raster():
         }
     )
     idx_map = {v: int(k) for k, v in idxr.attrs.items() if int(k) in np.unique(idxr)}
-    ds = pt.df_to_raster(df, idxr, "adm0_a3", idx_map, coords=["year"])
-    assert ds.sum() == 2855
+    ds = pt.df_to_raster(df, idxr, "adm0_a3", idx_map, coords=["year"])["data"]
+    assert ds.sum() == 8195
+    print(ds)
+
+    obs_df = pt.raster_to_df(ds, idxr, idx_map)
+    assert df.equals(obs_df)
 
 
-def test_df_to_weighted_raster():
+def test_df_to_weighted_raster_roundtrip():
     r = pt.Rasterize(like=LIKE)
     r.read_shpf(URL, idxkey="adm0_a3")
     idxr = r.rasterize(strategy="weighted", verbose=True)
@@ -80,8 +85,15 @@ def test_df_to_weighted_raster():
             "data": [15, 20, 5, 10],
         }
     )
-    ds = pt.df_to_weighted_raster(df, idxr, extra_coords=["year"], sum_dim=["adm0_a3"])
+    ds = pt.df_to_weighted_raster(df, idxr, extra_coords=["year"])
     assert np.isclose(ds.data.sel(year=2015).sum(), 3348.12920833)
+
+    obs_df = pt.raster_to_df(ds, idxr, func="max")
+    pdt.assert_frame_equal(
+        df.sort_values(by=["adm0_a3", "year"]).reset_index(drop=True),
+        obs_df.sort_values(by=["adm0_a3", "year"]).reset_index(drop=True),
+        check_dtype=False,
+    )
 
 
 def test_cell_area():
