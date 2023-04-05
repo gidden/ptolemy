@@ -2,7 +2,20 @@
 Changelog
 =========
 
-v0.1 (2023-03-15)
+v0.3 (current)
+------------------------------------------------------------
+
+* apply panel data to multi-layered rasters
+* calculate grid-cell areas by latitude
+
+
+v0.2 (2023-03-18)
+------------------------------------------------------------
+
+* apply data to single-layer rasters
+* retrieve data from maps (i.e., zonal statistics)
+
+v0.1 (2023-03-16)
 ------------------------------------------------------------
 
 * Initial release

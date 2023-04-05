@@ -10,6 +10,7 @@ Configuration file for then Sphinx documentation builder.
 import os
 from importlib.metadata import version
 
+
 # -- Project information --------------------------------------------------------------
 
 source_suffix = ".rst"
