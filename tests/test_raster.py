@@ -66,13 +66,13 @@ def test_df_to_raster_roundtrip():
         }
     )
     idx_map = {v: int(k) for k, v in idxr.attrs.items() if int(k) in np.unique(idxr)}
-    ds = pt.df_to_raster(df, idxr, "adm0_a3", idx_map, coords=["year"])["data"]
+    ds = pt.df_to_raster(df, idxr, "adm0_a3", idx_map, coords=["year"])
     assert ds.sum() == 8195
 
-    obs_df = pt.raster_to_df(ds, idxr, func="max", idx_map=idx_map)
+    obs_df = pt.raster_to_df(ds, idxr, func="max", idx_map=idx_map, idx_dim="adm0_a3")
     pdt.assert_frame_equal(
         df.sort_values(by=["adm0_a3", "year"]).reset_index(drop=True),
-        obs_df.sort_values(by=["adm0_a3", "year"]).reset_index(drop=True),
+        obs_df.sort_values(by=["adm0_a3", "year"]).reset_index(drop=True)[df.columns],
         check_dtype=False,
     )
 

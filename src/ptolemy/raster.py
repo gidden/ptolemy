@@ -552,7 +552,7 @@ def df_to_weighted_raster(df, idxraster, col=None, extra_coords=[], sum_dim=None
 
 
 def raster_to_df(
-    raster, idxraster, idx_map=None, nodata=-1, func="max", drop_zeros=True
+    raster, idxraster, idx_map=None, idx_dim="shape_dim", func="max", drop_zeros=True
 ):
     """
     Takes data from a raster and makes a pd.DataFrame. Zonal statistics can be
@@ -563,13 +563,13 @@ def raster_to_df(
     Parameters
     ----------
     raster : xr.DataArray
-        an array of data aligned with the lat/lon dimensions of `idxraster`
+        data to make a pd.DataFrame
     idxraster : xr.DataArray
         an index raster, e.g., from `pt.Rasterize()`
     idx_map : dict, optional
-        a map of strings to values of `idxraster` to generate the
-    nodata : optional
-        the nodata value of `idxraster`
+        a map of strings to values of `idxraster` if `idxraster` is not weighted
+    idx_dim : str, optional
+        the name of the index dimension if `idx_map` is provided
     func : string, optional
         a function with can be applied to an array of data. currently supports:
             - max
@@ -578,10 +578,14 @@ def raster_to_df(
     drop_zeros : bool, optional
         drop zeros from the dataframe before returning
     """
-    # TODO: translate single idxraster to weighted raster with 1s
-    #       if idx_map is given
-    # idxs = np.unique(idxraster)
-    # idxs = idxs[(idxs != nodata) & (~np.isnan(idxs))]
+    if idx_map:
+        idxraster = xr.concat(
+            [
+                xr.where(idxraster == v, 1, np.nan).expand_dims({idx_dim: [k]}, axis=1)
+                for k, v in idx_map.items()
+            ],
+            dim=idx_dim,
+        )
 
     data = raster * idxraster
     # TODO: there has to be a better way to do this
