@@ -2,7 +2,7 @@
 Changelog
 =========
 
-v0.3 (current)
+v0.3 (2023-04-19)
 ------------------------------------------------------------
 
 * apply panel data to multi-layered rasters (zonal statistics)
