@@ -5,7 +5,7 @@ Changelog
 v0.3 (current)
 ------------------------------------------------------------
 
-* apply panel data to multi-layered rasters
+* apply panel data to multi-layered rasters (zonal statistics)
 * calculate grid-cell areas by latitude
 
 
