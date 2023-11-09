@@ -46,6 +46,8 @@ dependencies = [
     'netCDF4',
     'geopandas',
     'rioxarray',
+    'flox',
+    'cf_xarray',
 ]
 
 dynamic = ["version"]
