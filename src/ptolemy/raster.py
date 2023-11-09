@@ -204,7 +204,7 @@ def rasterize_majority(
         if verbose:
             logger.info("Beginning fast modal calculation")
         ret = block_apply_2d(a, (scale, scale), func=fast_mode, weights=weights)
-    except:  # noqa: 722
+    except:  # noqa: E722
         warnings.warn("Could not apply fast mode function, using scipy's mode")
         ret = block_apply_2d(a, (scale, scale), func=mode)
 
@@ -611,19 +611,13 @@ class IndexRaster:
     boundary: xr.DataArray
     index: pd.Index
 
-    @classmethod
-    def from_netcdf(cls, path, chunks=None):
-        ds = xr.open_dataset(path, chunks=chunks)
-        name = ds.attrs["index_name"]
-        spatial_dims = ds["indicator"].dims
-        boundary = decode_compress_to_multi_index(ds["boundary"]).rename(
-            {f"{n}_r": n for n in spatial_dims}
-        )
-        return cls(
-            indicator=ds["indicator"].rename(name),
-            boundary=boundary,
-            index=ds.indexes["index"].rename(name),
-        )
+    @property
+    def name(self):
+        return self.index.name
+
+    @property
+    def dims(self):
+        return self.indicator.dim
 
     @classmethod
     def from_weighted_raster(cls, idxraster: xr.DataArray, dim: Optional[str] = None):
@@ -655,13 +649,19 @@ class IndexRaster:
 
         return cls(indicator=indicator, boundary=boundary, index=index)
 
-    @property
-    def name(self):
-        return self.index.name
-
-    @property
-    def dims(self):
-        return self.indicator.dims
+    @classmethod
+    def from_netcdf(cls, path, chunks=None):
+        ds = xr.open_dataset(path, chunks=chunks)
+        name = ds.attrs["index_name"]
+        spatial_dims = ds["indicator"].dims
+        boundary = decode_compress_to_multi_index(ds["boundary"]).rename(
+            {f"{n}_r": n for n in spatial_dims}
+        )
+        return cls(
+            indicator=ds["indicator"].rename(name),
+            boundary=boundary,
+            index=ds.indexes["index"].rename(name),
+        )
 
     def to_netcdf(self, path):
         boundary = encode_multi_index_as_compress(
@@ -687,7 +687,6 @@ class IndexRaster:
             ).isel(
                 {self.dim: slice(1, None)}
             )  # skip the "outside of all"-element
-
             # per-index weight on boundaries
             + getattr(self.boundary * ndraster.stack(spatial=("lat", "lon")), func)(
                 "spatial"
