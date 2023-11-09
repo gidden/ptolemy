@@ -1,6 +1,8 @@
 import itertools
 import logging
 import warnings
+from dataclasses import dataclass
+from typing import Optional
 
 import fiona as fio
 import geopandas as gpd
@@ -8,6 +10,8 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from affine import Affine
+from cf_xarray import decode_compress_to_multi_index, encode_multi_index_as_compress
+from flox.xarray import xarray_reduce
 from numpy.lib.stride_tricks import as_strided
 from rasterio.features import rasterize as _rasterize
 from shapely.geometry import Polygon, shape
@@ -599,3 +603,114 @@ def raster_to_df(
     if drop_zeros:
         df = df[df != 0].dropna()
     return df.reset_index()
+
+
+@dataclass
+class IndexRaster:
+    indicator: xr.DataArray
+    boundary: xr.DataArray
+    index: pd.Index
+
+    @classmethod
+    def from_netcdf(cls, path, chunks=None):
+        ds = xr.open_dataset(path, chunks=chunks)
+        name = ds.attrs["index_name"]
+        spatial_dims = ds["indicator"].dims
+        boundary = decode_compress_to_multi_index(ds["boundary"]).rename(
+            {f"{n}_r": n for n in spatial_dims}
+        )
+        return cls(
+            indicator=ds["indicator"].rename(name),
+            boundary=boundary,
+            index=ds.indexes["index"].rename(name),
+        )
+
+    @classmethod
+    def from_weighted_raster(cls, idxraster: xr.DataArray, dim: Optional[str] = None):
+        spatial_dims = ["lat", "lon"]
+        if dim is None:
+            non_spatial_dims = [d for d in idxraster.dims if d not in spatial_dims]
+            if len(non_spatial_dims) != 1:
+                raise ValueError(
+                    'Dimensions of idxraster should be ("lat", "lon", dim)'
+                )
+            dim = non_spatial_dims[0]
+
+        index = idxraster.indexes[dim].rename(dim)
+
+        idxraster = idxraster.assign_coords(
+            {dim: pd.RangeIndex(start=1, stop=len(index) + 1)}
+        )
+        idxr_stacked = idxraster.stack(spatial=spatial_dims)
+        boundary = idxr_stacked.sel(
+            spatial=((idxr_stacked > 0) & (idxr_stacked < 1)).any(dim)
+        )
+
+        within_ncountries = (idxraster >= 1).sum(dim)
+        if (within_ncountries > 1).any():
+            raise ValueError(
+                "Idxraster contains cells fully part of more than one {dim}"
+            )
+        indicator = (idxraster >= 1).idxmax(dim).where(within_ncountries, 0)
+
+        return cls(indicator=indicator, boundary=boundary, index=index)
+
+    @property
+    def name(self):
+        return self.index.name
+
+    @property
+    def dims(self):
+        return self.indicator.dims
+
+    def to_netcdf(self, path):
+        boundary = encode_multi_index_as_compress(
+            self.boundary.rename({n: f"{n}_r" for n in self.dims})
+        )
+        xr.Dataset(
+            dict(
+                indicator=self.indicator.rename("indicator"),
+                boundary=boundary,
+                index=self.index.rename("index"),
+            ),
+            attrs=dict(index_name=self.index.name),
+        ).to_netcdf(path)
+
+    def aggregate(self, ndraster: xr.DataArray, func: str = "sum") -> xr.DataArray:
+        weight = (
+            # per-index weight for mask
+            xarray_reduce(
+                ndraster,
+                self.indicator,
+                expected_groups=pd.RangeIndex(len(self.index) + 1),
+                func=func,
+            ).isel(
+                {self.dim: slice(1, None)}
+            )  # skip the "outside of all"-element
+
+            # per-index weight on boundaries
+            + getattr(self.boundary * ndraster.stack(spatial=("lat", "lon")), func)(
+                "spatial"
+            )
+        )
+        return weight.assign_coords({self.dim: self.index})
+
+    def grid(self, data: xr.DataArray) -> xr.DataArray:
+        data = data.assign_coords(
+            {self.dim: self.index.get_indexer(data.indexes[self.dim]) + 1}
+        )
+
+        # grid data values using fancy indexing for indicator mask
+        gridded = data.reindex(
+            {self.dim: pd.RangeIndex(len(self.index) + 1)}, fill_value=0
+        ).sel({self.dim: self.indicator})
+
+        # add boundary values
+        gridded += (
+            (self.boundary * data.reindex({self.dim: self.boundary.indexes[self.dim]}))
+            .sum(self.dim, min_count=1)
+            .unstack("spatial", fill_value=0)
+            .reindex_like(gridded, copy=False, fill_value=0)
+        )
+
+        return gridded
