@@ -2,6 +2,7 @@ from importlib.metadata import version as _version
 
 from . import raster
 from .raster import (
+    IndexRaster,
     Rasterize,
     cell_area,
     cell_area_from_file,

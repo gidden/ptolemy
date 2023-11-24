@@ -1,9 +1,11 @@
 import itertools
 import logging
 import warnings
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, replace
+from functools import cached_property
+from typing import Optional, Self
 
+import dask
 import fiona as fio
 import geopandas as gpd
 import numpy as np
@@ -611,16 +613,25 @@ class IndexRaster:
     boundary: xr.DataArray
     index: pd.Index
 
+    @cached_property
+    def cell_area(self):
+        return xr.DataArray.from_series(cell_area_from_file(self.indicator))
+
     @property
-    def name(self):
+    def dim(self):
         return self.index.name
 
     @property
-    def dims(self):
-        return self.indicator.dim
+    def spatial_dims(self):
+        return self.indicator.dims
 
     @classmethod
-    def from_weighted_raster(cls, idxraster: xr.DataArray, dim: Optional[str] = None):
+    def from_weighted_raster(
+        cls,
+        idxraster: xr.DataArray,
+        dim: Optional[str] = None,
+        allow_dask: bool = False,
+    ):
         spatial_dims = ["lat", "lon"]
         if dim is None:
             non_spatial_dims = [d for d in idxraster.dims if d not in spatial_dims]
@@ -635,64 +646,96 @@ class IndexRaster:
         idxraster = idxraster.assign_coords(
             {dim: pd.RangeIndex(start=1, stop=len(index) + 1)}
         )
+        is_boundary = lambda da: ((da > 0) & (da < 1)).any(dim)
+
         idxr_stacked = idxraster.stack(spatial=spatial_dims)
-        boundary = idxr_stacked.sel(
-            spatial=((idxr_stacked > 0) & (idxr_stacked < 1)).any(dim)
-        )
+        boundary = idxr_stacked.sel(spatial=is_boundary(idxr_stacked))
 
         within_ncountries = (idxraster >= 1).sum(dim)
         if (within_ncountries > 1).any():
             raise ValueError(
                 "Idxraster contains cells fully part of more than one {dim}"
             )
-        indicator = (idxraster >= 1).idxmax(dim).where(within_ncountries, 0)
+        indicator = (
+            (idxraster >= 1)
+            .idxmax(dim)
+            .where(within_ncountries & ~is_boundary(idxraster), 0)
+        )
+
+        if not allow_dask:
+            indicator = indicator.load()
+            boundary = boundary.load()
 
         return cls(indicator=indicator, boundary=boundary, index=index)
 
     @classmethod
     def from_netcdf(cls, path, chunks=None):
-        ds = xr.open_dataset(path, chunks=chunks)
-        name = ds.attrs["index_name"]
+        ds = decode_compress_to_multi_index(xr.open_dataset(path, chunks=chunks))
+        name = ds.attrs["dim_name"]
         spatial_dims = ds["indicator"].dims
-        boundary = decode_compress_to_multi_index(ds["boundary"]).rename(
-            {f"{n}_r": n for n in spatial_dims}
+        index = ds.indexes[name]
+        boundary = (
+            ds["boundary"]
+            .rename({f"{n}_r": n for n in spatial_dims})
+            .assign_coords({name: pd.RangeIndex(1, len(index) + 1)})
         )
+
         return cls(
             indicator=ds["indicator"].rename(name),
             boundary=boundary,
-            index=ds.indexes["index"].rename(name),
+            index=index,
         )
 
     def to_netcdf(self, path):
-        boundary = encode_multi_index_as_compress(
-            self.boundary.rename({n: f"{n}_r" for n in self.dims})
-        )
+        boundary = self.boundary.rename(
+            {n: f"{n}_r" for n in self.spatial_dims}
+        ).assign_coords({self.dim: self.index})
         xr.Dataset(
             dict(
-                indicator=self.indicator.rename("indicator"),
+                indicator=self.indicator,
                 boundary=boundary,
-                index=self.index.rename("index"),
             ),
-            attrs=dict(index_name=self.index.name),
-        ).to_netcdf(path)
+            attrs=dict(dim_name=self.dim),
+        ).pipe(encode_multi_index_as_compress).to_netcdf(path)
+
+    def to_total(self, name: str = "World") -> Self:
+        boundary = self.boundary.sum(self.dim, keepdims=True).assign_coords(
+            {self.dim: [1]}
+        )
+        becomes_indicator = (boundary >= 1).sel({self.dim: 1}, drop=True)
+        indicator = (
+            (self.indicator > 0)
+            | (
+                becomes_indicator.unstack("spatial", fill_value=False).reindex_like(
+                    self.indicator, fill_value=False
+                )
+            )
+        ).astype(int)
+        boundary = boundary.sel(spatial=~becomes_indicator)
+
+        return self.__class__(
+            indicator=indicator.rename(self.dim),
+            boundary=boundary,
+            index=pd.Index([name], name=self.dim),
+        )
 
     def aggregate(self, ndraster: xr.DataArray, func: str = "sum") -> xr.DataArray:
-        weight = (
-            # per-index weight for mask
+        # per-index weight for mask
+        weight_indicator = (
             xarray_reduce(
                 ndraster,
                 self.indicator,
                 expected_groups=pd.RangeIndex(len(self.index) + 1),
                 func=func,
-            ).isel(
-                {self.dim: slice(1, None)}
-            )  # skip the "outside of all"-element
-            # per-index weight on boundaries
-            + getattr(self.boundary * ndraster.stack(spatial=("lat", "lon")), func)(
-                "spatial"
-            )
+            ).isel({self.dim: slice(1, None)})  # skip the "outside of all"-element
         )
-        return weight.assign_coords({self.dim: self.index})
+        # per-index weight on boundaries
+        weight_boundary = getattr(
+            self.boundary * ndraster.stack(spatial=("lat", "lon")), func
+        )("spatial")
+        return (weight_indicator + weight_boundary).assign_coords(
+            {self.dim: self.index}
+        )
 
     def grid(self, data: xr.DataArray) -> xr.DataArray:
         data = data.assign_coords(
@@ -700,16 +743,33 @@ class IndexRaster:
         )
 
         # grid data values using fancy indexing for indicator mask
-        gridded = data.reindex(
+        gridded_indicator = data.reindex(
             {self.dim: pd.RangeIndex(len(self.index) + 1)}, fill_value=0
         ).sel({self.dim: self.indicator})
 
         # add boundary values
-        gridded += (
+        gridded_boundary = (
             (self.boundary * data.reindex({self.dim: self.boundary.indexes[self.dim]}))
             .sum(self.dim, min_count=1)
             .unstack("spatial", fill_value=0)
-            .reindex_like(gridded, copy=False, fill_value=0)
+            .reindex_like(gridded_indicator, copy=False, fill_value=0)
         )
 
-        return gridded
+        return gridded_indicator + gridded_boundary
+
+    def compute(self):
+        return self.__class__(
+            *dask.compute(self.indicator, self.boundary), index=self.index
+        )
+
+    def persist(self):
+        return self.__class__(
+            *dask.persist(self.indicator, self.boundary), index=self.index
+        )
+
+    def chunk(self, *args, **kwargs):
+        return replace(
+            self,
+            indicator=self.indicator.chunk(*args, **kwargs),
+            boundary=self.boundary.chunk(*args, **kwargs),
+        )
