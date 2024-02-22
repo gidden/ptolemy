@@ -701,6 +701,12 @@ class IndexRaster:
         ).pipe(encode_multi_index_as_compress).to_netcdf(path)
 
     def aggregate(self, ndraster: xr.DataArray, func: str = "sum") -> xr.DataArray:
+        if func != "sum":
+            raise NotImplementedError(
+                "For other aggregation functions than sum, combining results from"
+                " boundary and core is not implemented currently"
+            )
+
         # per-index weight for mask
         weight_indicator = (
             xarray_reduce(
