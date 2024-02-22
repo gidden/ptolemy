@@ -46,6 +46,7 @@ dependencies = [
     'netCDF4',
     'geopandas',
     'rioxarray',
+    'dask',
     'flox',
     'cf_xarray',
 ]
