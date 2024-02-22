@@ -3,7 +3,7 @@ import logging
 import warnings
 from dataclasses import dataclass, replace
 from functools import cached_property
-from typing import Optional, Self
+from typing import Optional
 
 import dask
 import fiona as fio
