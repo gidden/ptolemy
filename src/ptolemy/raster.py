@@ -708,14 +708,14 @@ class IndexRaster:
             )
 
         # per-index weight for mask
-        weight_indicator = (
-            xarray_reduce(
-                ndraster,
-                self.indicator,
-                expected_groups=pd.RangeIndex(len(self.index) + 1),
-                func=func,
-            ).isel({self.dim: slice(1, None)})  # skip the "outside of all"-element
-        )
+        weight_indicator = xarray_reduce(
+            ndraster,
+            self.indicator,
+            expected_groups=pd.RangeIndex(len(self.index) + 1),
+            func=func,
+        ).isel(
+            {self.dim: slice(1, None)}
+        )  # skip the "outside of all"-element
         with dask.config.set(**{"array.slicing.split_large_chunks": True}):
             # per-index weight on boundaries
             weight_boundary = getattr(
