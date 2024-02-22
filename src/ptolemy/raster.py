@@ -615,7 +615,9 @@ class IndexRaster:
 
     @cached_property
     def cell_area(self):
-        return xr.DataArray.from_series(cell_area_from_file(self.indicator))
+        return xr.DataArray.from_series(cell_area_from_file(self.indicator)).astype(
+            dtype=self.boundary, copy=False
+        )
 
     @property
     def dim(self):
@@ -708,7 +710,7 @@ class IndexRaster:
                 func=func,
             ).isel({self.dim: slice(1, None)})  # skip the "outside of all"-element
         )
-        with dask.config.set(**{'array.slicing.split_large_chunks': True}):
+        with dask.config.set(**{"array.slicing.split_large_chunks": True}):
             # per-index weight on boundaries
             weight_boundary = getattr(
                 self.boundary * ndraster.stack(spatial=("lat", "lon")), func
@@ -727,10 +729,13 @@ class IndexRaster:
             {self.dim: pd.RangeIndex(len(self.index) + 1)}, fill_value=0
         ).sel({self.dim: self.indicator})
 
-        with dask.config.set(**{'array.slicing.split_large_chunks': True}):
+        with dask.config.set(**{"array.slicing.split_large_chunks": True}):
             # add boundary values
             gridded_boundary = (
-                (self.boundary * data.reindex({self.dim: self.boundary.indexes[self.dim]}))
+                (
+                    self.boundary
+                    * data.reindex({self.dim: self.boundary.indexes[self.dim]})
+                )
                 .sum(self.dim, min_count=1)
                 .unstack("spatial", fill_value=0)
                 .reindex_like(gridded_indicator, copy=False, fill_value=0)
