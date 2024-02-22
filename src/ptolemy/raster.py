@@ -698,27 +698,6 @@ class IndexRaster:
             attrs=dict(dim_name=self.dim),
         ).pipe(encode_multi_index_as_compress).to_netcdf(path)
 
-    def to_total(self, name: str = "World") -> Self:
-        boundary = self.boundary.sum(self.dim, keepdims=True).assign_coords(
-            {self.dim: [1]}
-        )
-        becomes_indicator = (boundary >= 1).sel({self.dim: 1}, drop=True)
-        indicator = (
-            (self.indicator > 0)
-            | (
-                becomes_indicator.unstack("spatial", fill_value=False).reindex_like(
-                    self.indicator, fill_value=False
-                )
-            )
-        ).astype(int)
-        boundary = boundary.sel(spatial=~becomes_indicator)
-
-        return self.__class__(
-            indicator=indicator.rename(self.dim),
-            boundary=boundary,
-            index=pd.Index([name], name=self.dim),
-        )
-
     def aggregate(self, ndraster: xr.DataArray, func: str = "sum") -> xr.DataArray:
         # per-index weight for mask
         weight_indicator = (
