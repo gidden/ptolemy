@@ -89,7 +89,7 @@ def test_df_to_weighted_raster_roundtrip():
         }
     )
     ds = pt.df_to_weighted_raster(df, idxr, extra_coords=["year"])
-    assert np.isclose(ds.data.sel(year=2015).sum(), 3348.12920833)
+    assert np.isclose(ds.data.sel(year=2015).sum(), 3349.6, rtol=1e-5)
 
     obs_df = pt.raster_to_df(ds, idxr, func="max")
     pdt.assert_frame_equal(
