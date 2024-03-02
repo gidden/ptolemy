@@ -665,7 +665,6 @@ class IndexRaster:
         cls,
         idxraster: xr.DataArray,
         dim: Optional[str] = None,
-        allow_dask: bool = False,
     ) -> Self:
         """Creates indexraster from a weighted raster `idxraster`
 
@@ -717,10 +716,6 @@ class IndexRaster:
             .idxmax(dim)
             .where(within_ncountries & ~is_boundary(idxraster), 0)
         )
-
-        if not allow_dask:
-            indicator = indicator.load()
-            boundary = boundary.load()
 
         return cls(indicator=indicator, boundary=boundary, index=index)
 
