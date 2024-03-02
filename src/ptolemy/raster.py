@@ -3,7 +3,7 @@ import logging
 import warnings
 from dataclasses import dataclass, replace
 from functools import cached_property
-from typing import Optional
+from typing import Optional, Self
 
 import dask
 import fiona as fio
@@ -609,6 +609,39 @@ def raster_to_df(
 
 @dataclass
 class IndexRaster:
+    """Reduced weighted raster for aggregating and gridding on a lat, lon grid
+
+    Attributes
+    ----------
+    indicator : xr.DataArray (lon, lat)
+        Integer values from 1 to number of shapes indicating cells fully belonging to a
+        single shape
+    boundary : xr.DataArray (spatial, shape)
+        Weights per boundary cell and shape
+    index : pd.Index
+        Names of each shape
+    name : str
+        Dimension name of shapes
+    cell_area : xr.DataArea (lat)
+        Area of each grid cell in sqm
+
+    Classmethods
+    ------------
+    from_weighted_area
+        Creates indexraster from a weighted raster `idxraster`
+    from_netcdf
+        Reads indexraster from custom netcdf format
+
+    Methods
+    -------
+    to_netcdf
+        Saves indexraster to custom netcdf format
+    aggregate
+        Aggregates given data for each shape
+    grid
+        Creates a grid where panel data fills shapes
+    """
+
     indicator: xr.DataArray
     boundary: xr.DataArray
     index: pd.Index
@@ -633,7 +666,28 @@ class IndexRaster:
         idxraster: xr.DataArray,
         dim: Optional[str] = None,
         allow_dask: bool = False,
-    ):
+    ) -> Self:
+        """Creates indexraster from a weighted raster `idxraster`
+
+        Parameters
+        ----------
+        idxraster : xr.DataArray
+            Weighted raster
+        dim : str, optional
+            Non-spatial idxraster dimension, by default None
+
+        Returns
+        -------
+        indexraster
+            Corresponding reduced weighted raster
+
+        Raises
+        ------
+        ValueError
+            Dimensions of idxraster should be ("lat", "lon", dim)
+        ValueError
+            Idxraster contains cells fully part of more than one {dim}
+        """
         spatial_dims = ["lat", "lon"]
         if dim is None:
             non_spatial_dims = [d for d in idxraster.dims if d not in spatial_dims]
@@ -671,7 +725,21 @@ class IndexRaster:
         return cls(indicator=indicator, boundary=boundary, index=index)
 
     @classmethod
-    def from_netcdf(cls, path, chunks=None):
+    def from_netcdf(cls, path, chunks: Optional[dict | str] = None) -> Self:
+        """Read from custom netcdf format
+
+        Parameters
+        ----------
+        path
+            Where to read netcdf from
+        chunks : dict or "auto", optional
+            Opens netcdf with custom dask chunks, by default None
+
+        Returns
+        -------
+        Self
+            Indexraster from path
+        """
         ds = decode_compress_to_multi_index(xr.open_dataset(path, chunks=chunks))
         name = ds.attrs["dim_name"]
         spatial_dims = ds["indicator"].dims
@@ -689,6 +757,13 @@ class IndexRaster:
         )
 
     def to_netcdf(self, path):
+        """Save in custom netcdf format to `path`
+
+        Parameters
+        ----------
+        path
+            Where to store netcdf
+        """
         boundary = self.boundary.rename(
             {n: f"{n}_r" for n in self.spatial_dims}
         ).assign_coords({self.dim: self.index})
@@ -758,6 +833,27 @@ class IndexRaster:
         )
 
     def grid(self, data: xr.DataArray) -> xr.DataArray:
+        """Fills shapes with `data`
+
+        Parameters
+        ----------
+        data : xr.DataArray
+            Panel data with dimension dim
+
+        Returns
+        -------
+        xr.DataArray
+            Data without dimension dim but spatial dimensions
+
+        Notes
+        -----
+        For panel data like x = 1, y = 2, the constructed grid will contain
+
+        - the value 1 for all interior cells of shape x
+        - the value 2 for all interior cells of shape y
+        - the value a * 1 + b * 2 for a boundary cell, which belongs with a share a to x
+          and a share b to y
+        """
         data = data.assign_coords(
             {self.dim: self.index.get_indexer(data.indexes[self.dim]) + 1}
         )
@@ -782,16 +878,36 @@ class IndexRaster:
         return gridded_indicator + gridded_boundary
 
     def compute(self):
+        """ "Compute"s indicator and boundary
+
+        Returns
+        -------
+        Indexraster with numpy backed representations
+        """
         return self.__class__(
             *dask.compute(self.indicator, self.boundary), index=self.index
         )
 
     def persist(self):
+        """ "Compute"s indicator and boundary and keeps it in dask
+
+        Prefer persisting to computing to avoid having to transfer results back to workers.
+
+        Returns
+        -------
+        Indexraster with persisted dask-backed xarrays
+        """
         return self.__class__(
             *dask.persist(self.indicator, self.boundary), index=self.index
         )
 
     def chunk(self, *args, **kwargs):
+        """Chunk indicator and boundary
+
+        Returns
+        -------
+        Indexraster with chunked dasked arrays
+        """
         return replace(
             self,
             indicator=self.indicator.chunk(*args, **kwargs),
