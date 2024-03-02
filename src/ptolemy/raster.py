@@ -700,11 +700,39 @@ class IndexRaster:
             attrs=dict(dim_name=self.dim),
         ).pipe(encode_multi_index_as_compress).to_netcdf(path)
 
-    def aggregate(self, ndraster: xr.DataArray, func: str = "sum") -> xr.DataArray:
-        if func != "sum":
+    def aggregate(
+        self, ndraster: xr.DataArray, func: str = "sum", interior_only: bool = False
+    ) -> xr.DataArray:
+        """Aggregate data in `ndraster` per country
+
+        Uses flox for efficient computation of statistics on the country interior for
+        chunked data.
+
+        Parameters
+        ----------
+        ndraster : xr.DataArray
+            Data to aggregate, needs spatial dimensions
+        func : str, optional
+            Statistic to compute per country; statistics other than the default "sum"
+            are only supported on the interior.
+        interior_only : bool, optional
+            If True only takes into account cells fully contained in a single country,
+            required for statistics other than "sum", by default False
+
+        Returns
+        -------
+        xr.DataArray
+            Per country aggregations
+
+        Raises
+        ------
+        NotImplementedError
+            If a statistic other than sum should be computed
+        """
+        if func != "sum" and not interior_only:
             raise NotImplementedError(
-                "For other aggregation functions than sum, combining results from"
-                " boundary and core is not implemented currently"
+                'Only the statistic "sum" can be aggregated on interior and boundary,'
+                " set interior_only=True to ignore boundary effects."
             )
 
         # per-index weight for mask
@@ -716,11 +744,15 @@ class IndexRaster:
         ).isel(
             {self.dim: slice(1, None)}
         )  # skip the "outside of all"-element
+
+        if interior_only:
+            return weight_indicator.assign_coords({self.dim: self.index})
+
         with dask.config.set(**{"array.slicing.split_large_chunks": True}):
             # per-index weight on boundaries
-            weight_boundary = getattr(
-                self.boundary * ndraster.stack(spatial=("lat", "lon")), func
-            )("spatial")
+            weight_boundary = (
+                self.boundary * ndraster.stack(spatial=("lat", "lon"))
+            ).sum("spatial")
         return (weight_indicator + weight_boundary).assign_coords(
             {self.dim: self.index}
         )
