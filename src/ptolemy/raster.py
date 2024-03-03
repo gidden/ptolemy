@@ -720,7 +720,9 @@ class IndexRaster:
         return cls(indicator=indicator, boundary=boundary, index=index)
 
     @classmethod
-    def from_netcdf(cls, path, chunks: Optional[Union[dict,str]] = None) -> "IndexRaster":
+    def from_netcdf(
+        cls, path, chunks: Optional[Union[dict, str]] = None
+    ) -> "IndexRaster":
         """Read from custom netcdf format
 
         Parameters
