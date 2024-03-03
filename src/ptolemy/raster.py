@@ -3,7 +3,7 @@ import logging
 import warnings
 from dataclasses import dataclass, replace
 from functools import cached_property
-from typing import Optional
+from typing import Optional, Union
 
 import dask
 import fiona as fio
@@ -720,7 +720,7 @@ class IndexRaster:
         return cls(indicator=indicator, boundary=boundary, index=index)
 
     @classmethod
-    def from_netcdf(cls, path, chunks: Optional[dict | str] = None) -> "IndexRaster":
+    def from_netcdf(cls, path, chunks: Optional[Union[dict,str]] = None) -> "IndexRaster":
         """Read from custom netcdf format
 
         Parameters
