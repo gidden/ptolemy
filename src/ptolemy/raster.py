@@ -3,7 +3,7 @@ import logging
 import warnings
 from dataclasses import dataclass, replace
 from functools import cached_property
-from typing import Optional, Self
+from typing import Optional
 
 import dask
 import fiona as fio
@@ -665,7 +665,7 @@ class IndexRaster:
         cls,
         idxraster: xr.DataArray,
         dim: Optional[str] = None,
-    ) -> Self:
+    ) -> "IndexRaster":
         """Creates indexraster from a weighted raster `idxraster`
 
         Parameters
@@ -720,7 +720,7 @@ class IndexRaster:
         return cls(indicator=indicator, boundary=boundary, index=index)
 
     @classmethod
-    def from_netcdf(cls, path, chunks: Optional[dict | str] = None) -> Self:
+    def from_netcdf(cls, path, chunks: Optional[dict | str] = None) -> "IndexRaster":
         """Read from custom netcdf format
 
         Parameters
@@ -872,7 +872,7 @@ class IndexRaster:
 
         return gridded_indicator + gridded_boundary
 
-    def compute(self):
+    def compute(self) -> "IndexRaster":
         """ "Compute"s indicator and boundary
 
         Returns
@@ -883,7 +883,7 @@ class IndexRaster:
             *dask.compute(self.indicator, self.boundary), index=self.index
         )
 
-    def persist(self):
+    def persist(self) -> "IndexRaster":
         """ "Compute"s indicator and boundary and keeps it in dask
 
         Prefer persisting to computing to avoid having to transfer results back to workers.
@@ -896,7 +896,7 @@ class IndexRaster:
             *dask.persist(self.indicator, self.boundary), index=self.index
         )
 
-    def chunk(self, *args, **kwargs):
+    def chunk(self, *args, **kwargs) -> "IndexRaster":
         """Chunk indicator and boundary
 
         Returns
