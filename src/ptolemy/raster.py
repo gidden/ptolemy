@@ -16,8 +16,7 @@ from cf_xarray import decode_compress_to_multi_index, encode_multi_index_as_comp
 from flox.xarray import xarray_reduce
 from numpy.lib.stride_tricks import as_strided
 from rasterio.features import rasterize as _rasterize
-from shapely.geometry import Polygon, shape
-from shapely.ops import unary_union
+from shapely.geometry import Polygon
 
 
 logger = logging.getLogger(__name__)
@@ -280,7 +279,11 @@ class Rasterize:
             self.coords = coords
 
     def read_shpf(self, shpf, idxkey=None, flatten=None, where=None):
-        df = pio.read_dataframe(shpf, where=where)
+        df = (
+            pio.read_dataframe(shpf, where=where)
+            if not isinstance(shpf, gpd.GeoDataFrame)
+            else shpf
+        )
         idx = df[idxkey] if idxkey is not None else np.full(len(df), "")
         self.tags = tuple((str(i), s) for i, s in enumerate(idx))
 
