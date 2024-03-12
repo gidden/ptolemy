@@ -6,10 +6,10 @@ from functools import cached_property
 from typing import Optional, Union
 
 import dask
-import fiona as fio
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pyogrio as pio
 import xarray as xr
 from affine import Affine
 from cf_xarray import decode_compress_to_multi_index, encode_multi_index_as_compress
@@ -279,17 +279,16 @@ class Rasterize:
             self.shape = shape
             self.coords = coords
 
-    def read_shpf(self, shpf, idxkey=None, flatten=None):
-        with fio.open(shpf, "r") as n:
-            geoms_idxs = tuple((c["geometry"], i) for i, c in enumerate(n))
-            self.tags = tuple(
-                (str(i), c["properties"][idxkey] if idxkey is not None else "")
-                for i, c in enumerate(n)
-            )
-        if flatten:
+    def read_shpf(self, shpf, idxkey=None, flatten=None, where=None):
+        df = pio.read_dataframe(shpf, where=where)
+        idx = df[idxkey] if idxkey is not None else np.full(len(df), "")
+        self.tags = tuple((str(i), s) for i, s in enumerate(idx))
+
+        if not flatten:
+            geoms_idxs = tuple((s, i) for i, s in enumerate(df["geometry"]))
+        else:
             logger.info("Flatting geometries to a single feature")
-            geoms = [shape(geom) for geom, i in geoms_idxs]
-            geoms_idxs = [(unary_union(geoms), 0)]
+            geoms_idxs = [(df.unary_union, 0)]
         self.geoms_idxs = geoms_idxs
         self.idxkey = idxkey
         return self
@@ -813,9 +812,7 @@ class IndexRaster:
             self.indicator,
             expected_groups=pd.RangeIndex(len(self.index) + 1),
             func=func,
-        ).isel(
-            {self.dim: slice(1, None)}
-        )  # skip the "outside of all"-element
+        ).isel({self.dim: slice(1, None)})  # skip the "outside of all"-element
 
         if interior_only:
             return weight_indicator.assign_coords({self.dim: self.index})

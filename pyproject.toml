@@ -37,7 +37,7 @@ dependencies = [
     # https://stackoverflow.com/questions/14399534
     'pandas>=1.2',
     'deprecated',
-    'fiona',
+    "pyogrio",
     'xarray[io]',
     'affine',
     'rasterio',
