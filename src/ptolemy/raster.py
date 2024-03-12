@@ -649,7 +649,7 @@ class IndexRaster:
     @cached_property
     def cell_area(self):
         return xr.DataArray.from_series(cell_area_from_file(self.indicator)).astype(
-            dtype=self.boundary, copy=False
+            dtype=self.boundary.dtype, copy=False
         )
 
     @property
