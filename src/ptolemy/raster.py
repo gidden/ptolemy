@@ -1,9 +1,10 @@
+from __future__ import annotations
+
 import itertools
 import logging
 import warnings
 from dataclasses import dataclass, replace
 from functools import cached_property
-from typing import Optional, Union
 
 import dask
 import geopandas as gpd
@@ -666,8 +667,8 @@ class IndexRaster:
     def from_weighted_raster(
         cls,
         idxraster: xr.DataArray,
-        dim: Optional[str] = None,
-    ) -> "IndexRaster":
+        dim: str | None = None,
+    ) -> IndexRaster:
         """Creates indexraster from a weighted raster `idxraster`
 
         Parameters
@@ -722,9 +723,7 @@ class IndexRaster:
         return cls(indicator=indicator, boundary=boundary, index=index)
 
     @classmethod
-    def from_netcdf(
-        cls, path, chunks: Optional[Union[dict, str]] = None
-    ) -> "IndexRaster":
+    def from_netcdf(cls, path, chunks: dict | str | None = None) -> IndexRaster:
         """Read from custom netcdf format
 
         Parameters
@@ -773,6 +772,58 @@ class IndexRaster:
             ),
             attrs=dict(dim_name=self.dim),
         ).pipe(encode_multi_index_as_compress).to_netcdf(path)
+
+    def dissolve(self, mapping: pd.Series) -> IndexRaster:
+        """Combines masks for same value in `mapping` into new indexraster
+
+        Parameters
+        ----------
+        mapping : pd.Series
+            Maps masks index to aggregated index names
+            (f.ex. a region mapping from iso3 codes to model regions)
+
+        Returns
+        -------
+        IndexRaster
+            Aggregated index raster
+
+        Raises
+        ------
+        ValueError
+            If not all index values appear in mapping
+        """
+        mapping = mapping.reindex(self.index)
+        if mapping.isna().any():
+            raise ValueError(
+                f"Mapping undefined for some `{self.dim}`s: {', '.join(mapping.index[mapping.isna()])}"
+            )
+
+        new_index = pd.Index(mapping).unique()
+        mapping = xr.DataArray(
+            np.r_[0, new_index.get_indexer(mapping) + 1],
+            [pd.RangeIndex(len(mapping) + 1, name=self.dim)],
+            name=new_index.name,
+        )
+
+        boundary_agg, indicator = dask.compute(
+            self.boundary.groupby(mapping.isel({self.dim: slice(1, None)})).sum(),
+            mapping.sel({self.dim: self.indicator}),
+        )
+
+        # boundary cells which are now in a single region are "moved" to indicator
+        is_boundary = ((boundary_agg > 0) & (boundary_agg < 1)).any(new_index.name)
+        boundary = boundary_agg.sel(spatial=is_boundary)
+        from_boundary = boundary_agg.sel(spatial=~is_boundary).idxmax(
+            new_index.name, skipna=False
+        )
+        indicator.loc[
+            {
+                dim: from_boundary[dim].reset_index("spatial", drop=True)
+                for dim in self.spatial_dims
+            }
+        ] = from_boundary.reset_index("spatial", drop=True)
+
+        return self.__class__(indicator, boundary, new_index)
 
     def aggregate(
         self, ndraster: xr.DataArray, func: str = "sum", interior_only: bool = False
@@ -874,7 +925,7 @@ class IndexRaster:
 
         return gridded_indicator + gridded_boundary
 
-    def compute(self) -> "IndexRaster":
+    def compute(self) -> IndexRaster:
         """ "Compute"s indicator and boundary
 
         Returns
@@ -885,7 +936,7 @@ class IndexRaster:
             *dask.compute(self.indicator, self.boundary), index=self.index
         )
 
-    def persist(self) -> "IndexRaster":
+    def persist(self) -> IndexRaster:
         """ "Compute"s indicator and boundary and keeps it in dask
 
         Prefer persisting to computing to avoid having to transfer results back to workers.
@@ -898,7 +949,7 @@ class IndexRaster:
             *dask.persist(self.indicator, self.boundary), index=self.index
         )
 
-    def chunk(self, *args, **kwargs) -> "IndexRaster":
+    def chunk(self, *args, **kwargs) -> IndexRaster:
         """Chunk indicator and boundary
 
         Returns
