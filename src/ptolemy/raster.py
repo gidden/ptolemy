@@ -700,6 +700,10 @@ class IndexRaster:
             dim = non_spatial_dims[0]
 
         index = idxraster.indexes[dim].rename(dim)
+        if not index.is_unique:
+            raise pd.errors.InvalidIndexError(
+                "Indexraster only valid with uniquely valued index dimension"
+            )
 
         idxraster = idxraster.assign_coords(
             {dim: pd.RangeIndex(start=1, stop=len(index) + 1)}

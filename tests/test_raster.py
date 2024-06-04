@@ -130,6 +130,96 @@ def test_cell_area():
     assert np.isclose(exp.sum(), 1299347051157.3113)
 
 
+def test_indexraster_gridding(indexraster):
+    da = xr.DataArray.from_series(
+        pd.DataFrame(
+            {
+                "iso_a3": ["USA"] * 2 + ["MEX"] * 2,
+                "year": [2015, 2020] * 2,
+                "data": [15, 20, 5, 10],
+            }
+        )
+        .set_index(["iso_a3", "year"])
+        .data
+    )
+
+    country_weight = indexraster.aggregate(xr.ones_like(LIKE))
+    weighted = da / country_weight
+    gridded = indexraster.grid(weighted)
+    # Grid cell within US agrees
+    assert (gridded.sel(lat=40, lon=-105) - weighted.sel(iso_a3="USA")).max() <= 1e-5
+
+    # Boundary cell between USA and MEX agrees
+    blat, blon = 27.5, -97.5
+    cell_share = indexraster.boundary.sel(
+        lat=blat, lon=blon, iso_a3=[1, 2]
+    ).assign_coords(iso_a3=indexraster.index)
+    assert (
+        gridded.sel(lat=blat, lon=blon) - (cell_share * weighted).sum("iso_a3")
+    ).max() <= 1e-5
+
+    # Total agrees
+    assert (gridded.sum(["lat", "lon"]) - da.sum("iso_a3")).max() <= 1e-5
+
+
+def test_indexraster_roundtrip_interior(indexraster):
+    da = xr.DataArray.from_series(
+        pd.DataFrame(
+            {
+                "iso_a3": ["USA"] * 2 + ["MEX"] * 2,
+                "year": [2015, 2020] * 2,
+                "data": [15, 20, 5, 10],
+            }
+        )
+        .set_index(["iso_a3", "year"])
+        .data
+    )
+
+    # interior only roundtrip agrees
+    country_weight = indexraster.aggregate(xr.ones_like(LIKE), interior_only=True)
+    weighted = da / country_weight
+    gridded = indexraster.grid(weighted)
+    obs = indexraster.aggregate(gridded, interior_only=True)
+    assert abs(obs - da).max() <= 1e-5
+
+
+def test_indexraster_serialization(indexraster, tmp_path):
+    indexraster.to_netcdf(tmp_path / "idxraster.nc")
+    obs = pt.IndexRaster.from_netcdf(tmp_path / "idxraster.nc")
+
+    assert indexraster.index.equals(obs.index)
+    assert indexraster.boundary.equals(obs.boundary)
+    assert indexraster.indicator.equals(obs.indicator)
+
+
+def test_indexraster_dissolve(indexraster):
+    da = xr.DataArray.from_series(
+        pd.DataFrame(
+            {
+                "iso_a3": ["USA"] * 2 + ["MEX"] * 2,
+                "year": [2015, 2020] * 2,
+                "data": [15, 20, 15, 20],  # same data in USA and MEX
+            }
+        )
+        .set_index(["iso_a3", "year"])
+        .data
+    )
+
+    mapping = (
+        pd.Series({"MEX": "NAM", "USA": "NAM"})
+        .rename_axis(index="iso_a3")
+        .rename("region")
+    )
+    idxregion = indexraster.dissolve(mapping)
+
+    assert idxregion.index.equals(pd.Index(["NAM"], name="region"))
+
+    assert (
+        idxregion.grid(da.groupby(xr.DataArray.from_series(mapping)).first())
+        - indexraster.grid(da)
+    ).max() <= 1e-5
+
+
 if __name__ == "__main__":
     # save rasterized data for regression
     shapes = _natearth_shapes()
