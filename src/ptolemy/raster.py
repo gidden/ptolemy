@@ -612,7 +612,8 @@ def raster_to_df(
 
 @dataclass
 class IndexRaster:
-    """Reduced weighted raster for aggregating and gridding on a lat, lon grid
+    """
+    Reduced weighted raster for aggregating and gridding on a lat, lon grid.
 
     Attributes
     ----------
@@ -669,7 +670,8 @@ class IndexRaster:
         idxraster: xr.DataArray,
         dim: str | None = None,
     ) -> IndexRaster:
-        """Creates indexraster from a weighted raster `idxraster`
+        """
+        Creates indexraster from a weighted raster `idxraster`
 
         Parameters
         ----------
@@ -728,7 +730,8 @@ class IndexRaster:
 
     @classmethod
     def from_netcdf(cls, path, chunks: dict | str | None = None) -> IndexRaster:
-        """Read from custom netcdf format
+        """
+        Read from custom netcdf format.
 
         Parameters
         ----------
@@ -759,7 +762,8 @@ class IndexRaster:
         )
 
     def to_netcdf(self, path):
-        """Save in custom netcdf format to `path`
+        """
+        Save in custom netcdf format to `path`
 
         Parameters
         ----------
@@ -778,7 +782,8 @@ class IndexRaster:
         ).pipe(encode_multi_index_as_compress).to_netcdf(path)
 
     def dissolve(self, mapping: pd.Series) -> IndexRaster:
-        """Combines masks for same value in `mapping` into new indexraster
+        """
+        Combines masks for same value in `mapping` into new indexraster.
 
         Parameters
         ----------
@@ -832,7 +837,8 @@ class IndexRaster:
     def aggregate(
         self, ndraster: xr.DataArray, func: str = "sum", interior_only: bool = False
     ) -> xr.DataArray:
-        """Aggregate data in `ndraster` per country
+        """
+        Aggregate data in `ndraster` per country.
 
         Uses flox for efficient computation of statistics on the country interior for
         chunked data.
@@ -870,7 +876,9 @@ class IndexRaster:
             self.indicator,
             expected_groups=pd.RangeIndex(len(self.index) + 1),
             func=func,
-        ).isel({self.dim: slice(1, None)})  # skip the "outside of all"-element
+        ).isel(
+            {self.dim: slice(1, None)}
+        )  # skip the "outside of all"-element
 
         if interior_only:
             return weight_indicator.assign_coords({self.dim: self.index})
@@ -885,7 +893,8 @@ class IndexRaster:
         )
 
     def grid(self, data: xr.DataArray) -> xr.DataArray:
-        """Fills shapes with `data`
+        """
+        Fills shapes with `data`
 
         Parameters
         ----------
@@ -930,7 +939,8 @@ class IndexRaster:
         return gridded_indicator + gridded_boundary
 
     def compute(self) -> IndexRaster:
-        """ "Compute"s indicator and boundary
+        """
+        "Compute"s indicator and boundary.
 
         Returns
         -------
@@ -941,7 +951,8 @@ class IndexRaster:
         )
 
     def persist(self) -> IndexRaster:
-        """ "Compute"s indicator and boundary and keeps it in dask
+        """
+        "Compute"s indicator and boundary and keeps it in dask.
 
         Prefer persisting to computing to avoid having to transfer results back to workers.
 
@@ -954,7 +965,8 @@ class IndexRaster:
         )
 
     def chunk(self, *args, **kwargs) -> IndexRaster:
-        """Chunk indicator and boundary
+        """
+        Chunk indicator and boundary.
 
         Returns
         -------
