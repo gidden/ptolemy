@@ -32,12 +32,12 @@ keywords=[
     # eg: 'keyword1', 'keyword2', 'keyword3',
 ]
 
-requires-python = ">=3.8, <4"
+requires-python = ">=3.9, <4"
 dependencies = [
     # https://stackoverflow.com/questions/14399534
     'pandas>=1.2',
     'deprecated',
-    'fiona',
+    "pyogrio",
     'xarray[io]',
     'affine',
     'rasterio',
@@ -46,6 +46,9 @@ dependencies = [
     'netCDF4',
     'geopandas',
     'rioxarray',
+    'dask',
+    'flox',
+    'cf_xarray',
 ]
 
 dynamic = ["version"]

@@ -1,17 +1,23 @@
+from __future__ import annotations
+
 import itertools
 import logging
 import warnings
+from dataclasses import dataclass, replace
+from functools import cached_property
 
-import fiona as fio
+import dask
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pyogrio as pio
 import xarray as xr
 from affine import Affine
+from cf_xarray import decode_compress_to_multi_index, encode_multi_index_as_compress
+from flox.xarray import xarray_reduce
 from numpy.lib.stride_tricks import as_strided
 from rasterio.features import rasterize as _rasterize
-from shapely.geometry import Polygon, shape
-from shapely.ops import unary_union
+from shapely.geometry import Polygon
 
 
 logger = logging.getLogger(__name__)
@@ -200,7 +206,7 @@ def rasterize_majority(
         if verbose:
             logger.info("Beginning fast modal calculation")
         ret = block_apply_2d(a, (scale, scale), func=fast_mode, weights=weights)
-    except:  # noqa: 722
+    except:  # noqa: E722
         warnings.warn("Could not apply fast mode function, using scipy's mode")
         ret = block_apply_2d(a, (scale, scale), func=mode)
 
@@ -273,17 +279,20 @@ class Rasterize:
             self.shape = shape
             self.coords = coords
 
-    def read_shpf(self, shpf, idxkey=None, flatten=None):
-        with fio.open(shpf, "r") as n:
-            geoms_idxs = tuple((c["geometry"], i) for i, c in enumerate(n))
-            self.tags = tuple(
-                (str(i), c["properties"][idxkey] if idxkey is not None else "")
-                for i, c in enumerate(n)
-            )
-        if flatten:
+    def read_shpf(self, shpf, idxkey=None, flatten=None, where=None):
+        df = (
+            pio.read_dataframe(shpf, where=where)
+            if not isinstance(shpf, gpd.GeoDataFrame)
+            else shpf
+        )
+        idx = df[idxkey] if idxkey is not None else np.full(len(df), "")
+        self.tags = tuple((str(i), s) for i, s in enumerate(idx))
+
+        if not flatten:
+            geoms_idxs = tuple((s, i) for i, s in enumerate(df["geometry"]))
+        else:
             logger.info("Flatting geometries to a single feature")
-            geoms = [shape(geom) for geom, i in geoms_idxs]
-            geoms_idxs = [(unary_union(geoms), 0)]
+            geoms_idxs = [(df.unary_union, 0)]
         self.geoms_idxs = geoms_idxs
         self.idxkey = idxkey
         return self
@@ -599,3 +608,372 @@ def raster_to_df(
     if drop_zeros:
         df = df[df != 0].dropna()
     return df.reset_index()
+
+
+@dataclass
+class IndexRaster:
+    """
+    Reduced weighted raster for aggregating and gridding on a lat, lon grid.
+
+    Attributes
+    ----------
+    indicator : xr.DataArray (lon, lat)
+        Integer values from 1 to number of shapes indicating cells fully belonging to a
+        single shape
+    boundary : xr.DataArray (spatial, shape)
+        Weights per boundary cell and shape
+    index : pd.Index
+        Names of each shape
+    name : str
+        Dimension name of shapes
+    cell_area : xr.DataArea (lat)
+        Area of each grid cell in sqm
+
+    Classmethods
+    ------------
+    from_weighted_area
+        Creates indexraster from a weighted raster `idxraster`
+    from_netcdf
+        Reads indexraster from custom netcdf format
+
+    Methods
+    -------
+    to_netcdf
+        Saves indexraster to custom netcdf format
+    aggregate
+        Aggregates given data for each shape
+    grid
+        Creates a grid where panel data fills shapes
+    """
+
+    indicator: xr.DataArray
+    boundary: xr.DataArray
+    index: pd.Index
+
+    @cached_property
+    def cell_area(self):
+        return xr.DataArray.from_series(cell_area_from_file(self.indicator)).astype(
+            dtype=self.boundary.dtype, copy=False
+        )
+
+    @property
+    def dim(self):
+        return self.index.name
+
+    @property
+    def spatial_dims(self):
+        return self.indicator.dims
+
+    @classmethod
+    def from_weighted_raster(
+        cls,
+        idxraster: xr.DataArray,
+        dim: str | None = None,
+    ) -> IndexRaster:
+        """
+        Creates indexraster from a weighted raster `idxraster`
+
+        Parameters
+        ----------
+        idxraster : xr.DataArray
+            Weighted raster
+        dim : str, optional
+            Non-spatial idxraster dimension, by default None
+
+        Returns
+        -------
+        indexraster
+            Corresponding reduced weighted raster
+
+        Raises
+        ------
+        ValueError
+            Dimensions of idxraster should be ("lat", "lon", dim)
+        ValueError
+            Idxraster contains cells fully part of more than one {dim}
+        """
+        spatial_dims = ["lat", "lon"]
+        if dim is None:
+            non_spatial_dims = [d for d in idxraster.dims if d not in spatial_dims]
+            if len(non_spatial_dims) != 1:
+                raise ValueError(
+                    'Dimensions of idxraster should be ("lat", "lon", dim)'
+                )
+            dim = non_spatial_dims[0]
+
+        index = idxraster.indexes[dim].rename(dim)
+        if not index.is_unique:
+            raise pd.errors.InvalidIndexError(
+                "Indexraster only valid with uniquely valued index dimension"
+            )
+
+        idxraster = idxraster.assign_coords(
+            {dim: pd.RangeIndex(start=1, stop=len(index) + 1)}
+        )
+        is_boundary = lambda da: ((da > 0) & (da < 1)).any(dim)
+
+        idxr_stacked = idxraster.stack(spatial=spatial_dims)
+        boundary = idxr_stacked.sel(spatial=is_boundary(idxr_stacked))
+
+        within_ncountries = (idxraster >= 1).sum(dim)
+        if (within_ncountries > 1).any():
+            raise ValueError(
+                "Idxraster contains cells fully part of more than one {dim}"
+            )
+        indicator = (
+            (idxraster >= 1)
+            .idxmax(dim)
+            .where(within_ncountries & ~is_boundary(idxraster), 0)
+        )
+
+        return cls(indicator=indicator, boundary=boundary, index=index)
+
+    @classmethod
+    def from_netcdf(cls, path, chunks: dict | str | None = None) -> IndexRaster:
+        """
+        Read from custom netcdf format.
+
+        Parameters
+        ----------
+        path
+            Where to read netcdf from
+        chunks : dict or "auto", optional
+            Opens netcdf with custom dask chunks, by default None
+
+        Returns
+        -------
+        Self
+            Indexraster from path
+        """
+        ds = decode_compress_to_multi_index(xr.open_dataset(path, chunks=chunks))
+        name = ds.attrs["dim_name"]
+        spatial_dims = ds["indicator"].dims
+        index = ds.indexes[name]
+        boundary = (
+            ds["boundary"]
+            .rename({f"{n}_r": n for n in spatial_dims})
+            .assign_coords({name: pd.RangeIndex(1, len(index) + 1)})
+        )
+
+        return cls(
+            indicator=ds["indicator"].rename(name),
+            boundary=boundary,
+            index=index,
+        )
+
+    def to_netcdf(self, path):
+        """
+        Save in custom netcdf format to `path`
+
+        Parameters
+        ----------
+        path
+            Where to store netcdf
+        """
+        boundary = self.boundary.rename(
+            {n: f"{n}_r" for n in self.spatial_dims}
+        ).assign_coords({self.dim: self.index})
+        xr.Dataset(
+            dict(
+                indicator=self.indicator,
+                boundary=boundary,
+            ),
+            attrs=dict(dim_name=self.dim),
+        ).pipe(encode_multi_index_as_compress).to_netcdf(path)
+
+    def dissolve(self, mapping: pd.Series) -> IndexRaster:
+        """
+        Combines masks for same value in `mapping` into new indexraster.
+
+        Parameters
+        ----------
+        mapping : pd.Series
+            Maps masks index to aggregated index names
+            (f.ex. a region mapping from iso3 codes to model regions)
+
+        Returns
+        -------
+        IndexRaster
+            Aggregated index raster
+
+        Raises
+        ------
+        ValueError
+            If not all index values appear in mapping
+        """
+        mapping = mapping.reindex(self.index)
+        if mapping.isna().any():
+            raise ValueError(
+                f"Mapping undefined for some `{self.dim}`s: {', '.join(mapping.index[mapping.isna()])}"
+            )
+
+        new_index = pd.Index(mapping).unique()
+        mapping = xr.DataArray(
+            np.r_[0, new_index.get_indexer(mapping) + 1],
+            [pd.RangeIndex(len(mapping) + 1, name=self.dim)],
+            name=new_index.name,
+        )
+
+        boundary_agg, indicator = dask.compute(
+            self.boundary.groupby(mapping.isel({self.dim: slice(1, None)})).sum(),
+            mapping.sel({self.dim: self.indicator}),
+        )
+
+        # boundary cells which are now in a single region are "moved" to indicator
+        is_boundary = ((boundary_agg > 0) & (boundary_agg < 1)).any(new_index.name)
+        boundary = boundary_agg.sel(spatial=is_boundary)
+        from_boundary = boundary_agg.sel(spatial=~is_boundary).idxmax(
+            new_index.name, skipna=False
+        )
+        indicator.loc[
+            {
+                dim: from_boundary[dim].reset_index("spatial", drop=True)
+                for dim in self.spatial_dims
+            }
+        ] = from_boundary.reset_index("spatial", drop=True)
+
+        return self.__class__(indicator, boundary, new_index)
+
+    def aggregate(
+        self, ndraster: xr.DataArray, func: str = "sum", interior_only: bool = False
+    ) -> xr.DataArray:
+        """
+        Aggregate data in `ndraster` per country.
+
+        Uses flox for efficient computation of statistics on the country interior for
+        chunked data.
+
+        Parameters
+        ----------
+        ndraster : xr.DataArray
+            Data to aggregate, needs spatial dimensions
+        func : str, optional
+            Statistic to compute per country; statistics other than the default "sum"
+            are only supported on the interior.
+        interior_only : bool, optional
+            If True only takes into account cells fully contained in a single country,
+            required for statistics other than "sum", by default False
+
+        Returns
+        -------
+        xr.DataArray
+            Per country aggregations
+
+        Raises
+        ------
+        NotImplementedError
+            If a statistic other than sum should be computed
+        """
+        if func != "sum" and not interior_only:
+            raise NotImplementedError(
+                'Only the statistic "sum" can be aggregated on interior and boundary,'
+                " set interior_only=True to ignore boundary effects."
+            )
+
+        # per-index weight for mask
+        weight_indicator = xarray_reduce(
+            ndraster,
+            self.indicator,
+            expected_groups=pd.RangeIndex(len(self.index) + 1),
+            func=func,
+        ).isel(
+            {self.dim: slice(1, None)}
+        )  # skip the "outside of all"-element
+
+        if interior_only:
+            return weight_indicator.assign_coords({self.dim: self.index})
+
+        with dask.config.set(**{"array.slicing.split_large_chunks": True}):
+            # per-index weight on boundaries
+            weight_boundary = (
+                self.boundary * ndraster.stack(spatial=("lat", "lon"))
+            ).sum("spatial")
+        return (weight_indicator + weight_boundary).assign_coords(
+            {self.dim: self.index}
+        )
+
+    def grid(self, data: xr.DataArray) -> xr.DataArray:
+        """
+        Fills shapes with `data`
+
+        Parameters
+        ----------
+        data : xr.DataArray
+            Panel data with dimension dim
+
+        Returns
+        -------
+        xr.DataArray
+            Data without dimension dim but spatial dimensions
+
+        Notes
+        -----
+        For panel data like x = 1, y = 2, the constructed grid will contain
+
+        - the value 1 for all interior cells of shape x
+        - the value 2 for all interior cells of shape y
+        - the value a * 1 + b * 2 for a boundary cell, which belongs with a share a to x
+          and a share b to y
+        """
+        data = data.assign_coords(
+            {self.dim: self.index.get_indexer(data.indexes[self.dim]) + 1}
+        )
+
+        # grid data values using fancy indexing for indicator mask
+        gridded_indicator = data.reindex(
+            {self.dim: pd.RangeIndex(len(self.index) + 1)}, fill_value=0
+        ).sel({self.dim: self.indicator})
+
+        with dask.config.set(**{"array.slicing.split_large_chunks": True}):
+            # add boundary values
+            gridded_boundary = (
+                (
+                    self.boundary
+                    * data.reindex({self.dim: self.boundary.indexes[self.dim]})
+                )
+                .sum(self.dim, min_count=1)
+                .unstack("spatial", fill_value=0)
+                .reindex_like(gridded_indicator, copy=False, fill_value=0)
+            )
+
+        return gridded_indicator + gridded_boundary
+
+    def compute(self) -> IndexRaster:
+        """
+        "Compute"s indicator and boundary.
+
+        Returns
+        -------
+        Indexraster with numpy backed representations
+        """
+        return self.__class__(
+            *dask.compute(self.indicator, self.boundary), index=self.index
+        )
+
+    def persist(self) -> IndexRaster:
+        """
+        "Compute"s indicator and boundary and keeps it in dask.
+
+        Prefer persisting to computing to avoid having to transfer results back to workers.
+
+        Returns
+        -------
+        Indexraster with persisted dask-backed xarrays
+        """
+        return self.__class__(
+            *dask.persist(self.indicator, self.boundary), index=self.index
+        )
+
+    def chunk(self, *args, **kwargs) -> IndexRaster:
+        """
+        Chunk indicator and boundary.
+
+        Returns
+        -------
+        Indexraster with chunked dasked arrays
+        """
+        return replace(
+            self,
+            indicator=self.indicator.chunk(*args, **kwargs),
+            boundary=self.boundary.chunk(*args, **kwargs),
+        )
