@@ -917,9 +917,11 @@ class IndexRaster:
         )
 
         # grid data values using fancy indexing for indicator mask
-        gridded_indicator = data.reindex(
-            {self.dim: pd.RangeIndex(len(self.index) + 1)}, fill_value=0
-        ).sel({self.dim: self.indicator})
+        gridded_indicator = (
+            data.reindex({self.dim: pd.RangeIndex(len(self.index) + 1)}, fill_value=0)
+            .sel({self.dim: self.indicator})
+            .chunk(dict(lat=-1, lon=-1))
+        )
 
         # add boundary values
         gridded_boundary = (
@@ -927,7 +929,7 @@ class IndexRaster:
             .sum(self.dim, min_count=1)
             .unstack("spatial", fill_value=0)
             .reindex_like(gridded_indicator, copy=False, fill_value=0)
-            .chunk(-1)
+            .chunk(dict(lat=-1, lon=-1))
         )
 
         return gridded_indicator + gridded_boundary
