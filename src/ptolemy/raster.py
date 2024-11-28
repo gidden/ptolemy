@@ -876,7 +876,9 @@ class IndexRaster:
             self.indicator,
             expected_groups=pd.RangeIndex(len(self.index) + 1),
             func=func,
-        ).isel({self.dim: slice(1, None)})  # skip the "outside of all"-element
+        ).isel(
+            {self.dim: slice(1, None)}
+        )  # skip the "outside of all"-element
 
         if interior_only:
             return weight_indicator.assign_coords({self.dim: self.index})
