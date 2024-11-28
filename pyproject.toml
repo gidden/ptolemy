@@ -5,6 +5,7 @@ readme = "README.rst"
 license = {text = "MIT"}
 authors = [
     {name = "Matthew Gidden", email = "matthew.gidden@gmail.com"},
+    {name = "Jonas Hoersch", email = "jonas.hoersch@climateanalytics.org"},
 ]
 
 # complete classifier list:
@@ -41,7 +42,7 @@ dependencies = [
     'xarray[io]',
     'affine',
     'rasterio',
-    'scipy',    
+    'scipy',
     'shapely',
     'netCDF4',
     'geopandas',
@@ -95,7 +96,7 @@ addopts = """
 -p pytest_cov
 """
 markers = [
-    "long: tests that are long enough to only be run on CI", 
+    "long: tests that are long enough to only be run on CI",
     "lfs: tests requiring git lfs files",
 ]
 python_files = [
